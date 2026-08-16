@@ -1,0 +1,12 @@
+{
+  "name": "mainmoney/mm-aggr-woocommerce",
+  "description": "WooCommerce payment gateway for MainMoney aggregator",
+  "type": "wordpress-plugin",
+  "license": "SEE LICENSE IN LICENSE",
+  "require": {
+    "php": "^8.2"
+  },
+  "suggest": {
+    "mainmoney/mm-aggr-php-sdk": "Official PHP SDK (required when the SDK is published)"
+  }
+}

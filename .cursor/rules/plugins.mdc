@@ -1,0 +1,9 @@
+---
+description: WooCommerce plugin must use official PHP and JS SDKs
+alwaysApply: true
+---
+
+# Plugin SDKs
+
+- Backend: official PHP SDK. Frontend checkout: official JS/TS SDK.
+- Do not depend on the WordPress plugin repository.
