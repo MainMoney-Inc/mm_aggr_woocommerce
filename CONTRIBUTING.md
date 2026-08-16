@@ -14,10 +14,22 @@ by MainMoney SARL.
 git clone git@github.com:MainMoney-Inc/mm_aggr_woocommerce.git
 ```
 
+From the contrib hub, this tree is `contrib/plugins/woocommerce` with the PHP
+SDK at `contrib/sdks/php`.
+
 ## Setup
 
 ```bash
 composer install
+npm install
+npm run build
+```
+
+## Test
+
+```bash
+vendor/bin/phpunit
+vendor/bin/phpstan analyse
 ```
 
 ## Branches and commits
@@ -29,4 +41,4 @@ composer install
 
 - Include tests for behavior changes.
 - Do not invent merchant API endpoints; use `/api/v1/schema/merchants/`.
-- Do not commit secrets.
+- Do not commit secrets. Do not depend on the WordPress plugin repository.

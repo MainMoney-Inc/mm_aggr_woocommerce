@@ -17,9 +17,29 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+define('WC_MM_AGGR_VERSION', '0.1.0');
+define('WC_MM_AGGR_FILE', __FILE__);
+define('WC_MM_AGGR_DIR', plugin_dir_path(__FILE__));
+define('WC_MM_AGGR_URL', plugin_dir_url(__FILE__));
+
+$wcMmAggrAutoload = WC_MM_AGGR_DIR.'vendor/autoload.php';
+if (!is_file($wcMmAggrAutoload)) {
+    add_action('admin_notices', static function (): void {
+        echo '<div class="notice notice-error"><p>';
+        echo esc_html__('MainMoney for WooCommerce requires Composer dependencies. Run composer install in the plugin directory.', 'woocommerce-mm-aggr');
+        echo '</p></div>';
+    });
+
+    return;
+}
+
+require_once $wcMmAggrAutoload;
+
 add_action('plugins_loaded', static function (): void {
     if (!class_exists('WC_Payment_Gateway')) {
         return;
     }
-    require_once __DIR__ . '/includes/class-wc-gateway-mm-aggr.php';
+    load_plugin_textdomain('woocommerce-mm-aggr', false, dirname(plugin_basename(WC_MM_AGGR_FILE)).'/languages');
+    require_once WC_MM_AGGR_DIR.'includes/class-plugin.php';
+    WC_Mm_Aggr_Plugin::boot();
 });
