@@ -42,3 +42,4 @@ vendor/bin/phpstan analyse
 - Include tests for behavior changes.
 - Do not invent merchant API endpoints; use `/api/v1/schema/merchants/`.
 - Do not commit secrets. Do not depend on the WordPress plugin repository.
+- Local demos live under `examples/`. Downloaded WordPress core is gitignored.

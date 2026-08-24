@@ -1,0 +1,4 @@
+wordpress/
+.env
+.env.*
+!.env.example

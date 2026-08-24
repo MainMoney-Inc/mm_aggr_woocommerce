@@ -29,6 +29,10 @@ This plugin does not require the separate WordPress plugin.
 Checkout (classic and Blocks) mounts the official wizard with the order total
 locked. Merchant API keys never leave the server.
 
+## Examples
+
+A local WooCommerce store with this gateway is in [examples/woocommerce-store](examples/woocommerce-store).
+
 ## License
 
 Copyright (c) 2026 MainMoney SARL. Licensed under the PolyForm Noncommercial
