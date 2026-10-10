@@ -68,7 +68,7 @@ final class ProxyService
             return $this->asArray($this->client->amountLimits->list($this->scalarQuery($query)));
         }
         if ($method === 'POST' && $route === 'fees/simulate') {
-            return $this->asArray($this->client->fees->simulate($body));
+            return $this->asArray($this->client->fees->simulate($this->withoutBrowserFeeFields($body)));
         }
         if ($method === 'GET' && $route === 'checkout-preferences') {
             return $this->asArray($this->client->checkoutPreferences->get());
@@ -99,12 +99,27 @@ final class ProxyService
      */
     private function createDeposit(array $body, CheckoutSession $session): array
     {
+        $body = $this->withoutBrowserFeeFields($body);
         if ($session->lockAmount && $session->amount !== null) {
             $body['amount'] = $session->amount;
         }
         $body['reference'] = $session->reference;
 
         return $this->client->deposits->create($body, $session->reference);
+    }
+
+    /**
+     * Fees are merchant-controlled: the browser may not choose the merchant fee or who bears the fees.
+     *
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
+    private function withoutBrowserFeeFields(array $body): array
+    {
+        unset($body['fees'], $body['fee_bearer']);
+
+        return $body;
     }
 
     /**
