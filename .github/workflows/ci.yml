@@ -25,16 +25,20 @@ jobs:
   js:
     runs-on: ubuntu-latest
     steps:
+      # build.mjs resolves the JS SDK sources at ../../sdks/javascript (contrib hub layout).
       - uses: actions/checkout@v4
+        with:
+          path: contrib/plugins/woocommerce
       - uses: actions/checkout@v4
         with:
           repository: MainMoney-Inc/mm_aggr_js_sdk
-          path: ../../sdks/javascript
-          token: ${{ secrets.GITHUB_TOKEN }}
+          path: contrib/sdks/javascript
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
       - run: npm ci
-        working-directory: ../../sdks/javascript
+        working-directory: contrib/sdks/javascript
       - run: npm install
+        working-directory: contrib/plugins/woocommerce
       - run: npm run build
+        working-directory: contrib/plugins/woocommerce
