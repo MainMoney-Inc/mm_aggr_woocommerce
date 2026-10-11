@@ -7,7 +7,8 @@
  * Requires PHP: 8.2
  * Requires Plugins: woocommerce
  * Author: MainMoney SARL
- * License: PolyForm-Noncommercial-1.0.0
+ * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: woocommerce-mm-aggr
  */
 

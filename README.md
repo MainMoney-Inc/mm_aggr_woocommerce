@@ -35,8 +35,6 @@ A local WooCommerce store with this gateway is in [examples/woocommerce-store](e
 
 ## License
 
-Copyright (c) 2026 MainMoney SARL. Licensed under the PolyForm Noncommercial
-License 1.0.0. Commercial use requires permission from MainMoney SARL.
-See [LICENSE](LICENSE).
+Copyright (c) 2026 MainMoney SARL. Licensed under the GNU General Public License, version 2 or (at your option) any later version (GPL-2.0-or-later). See [LICENSE](LICENSE).
 
 Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md).
