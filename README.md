@@ -1,5 +1,7 @@
 # MainMoney for WooCommerce
 
+[![Packagist](https://img.shields.io/packagist/v/mainmoney/mm-aggr-woocommerce)](https://packagist.org/packages/mainmoney/mm-aggr-woocommerce) [![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+
 WooCommerce payment gateway for the MainMoney aggregator. Uses the official
 [PHP SDK](https://github.com/MainMoney-Inc/mm_aggr_php_sdk) on the server and the
 [JS/TS frontend SDK](https://github.com/MainMoney-Inc/mm_aggr_js_sdk) on checkout.
@@ -16,10 +18,12 @@ This plugin does not require the separate WordPress plugin.
 ## Install
 
 1. Install WooCommerce.
-2. Copy this plugin into `wp-content/plugins/` and run `composer install`.
-   Until Packagist lists the PHP SDK, Composer loads it from
-   `../../sdks/php` (the contrib hub layout, or clone
-   [mm_aggr_php_sdk](https://github.com/MainMoney-Inc/mm_aggr_php_sdk) there).
+2. Install the plugin, either:
+   - with Composer: `composer require mainmoney/mm-aggr-woocommerce`, or
+   - from the zip attached to each [GitHub release](https://github.com/MainMoney-Inc/mm_aggr_woocommerce/releases) (Plugins → Add New → Upload; dependencies are bundled).
+
+   From a git checkout, run `composer install`; the PHP SDK
+   ([`mainmoney/mm-aggr-php-sdk`](https://packagist.org/packages/mainmoney/mm-aggr-php-sdk)) comes from Packagist.
 3. Activate **MainMoney for WooCommerce**.
 4. WooCommerce → Settings → Payments → MainMoney: Client ID, API secret,
    Test mode, webhook secret. Leave Base URI empty unless you override the SDK hosts.
