@@ -1,0 +1,44 @@
+name: Publish
+
+# Packagist reads git tags through its GitHub webhook. This workflow verifies
+# the tag matches the plugin header, builds the installable zip and attaches it
+# to a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+          tools: composer
+      - name: Tag matches plugin version
+        run: |
+          version="$(grep -hoP '^ \* Version:\s*\K\S+' *.php | head -1)"
+          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} != plugin version v${version}"; exit 1; }
+      - run: composer validate --strict --no-check-lock
+      - run: scripts/build-zip.sh build
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" build/*.zip --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Notify Packagist
+        if: ${{ env.PACKAGIST_TOKEN != '' }}
+        env:
+          PACKAGIST_USERNAME: mainmoney
+        run: |
+          curl -fsS -XPOST -H 'content-type: application/json' \
+            "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}" \
+            -d "{\"repository\":{\"url\":\"https://github.com/${GITHUB_REPOSITORY}\"}}"

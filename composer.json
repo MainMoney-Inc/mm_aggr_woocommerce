@@ -3,6 +3,22 @@
   "description": "WooCommerce payment gateway for MainMoney aggregator",
   "type": "wordpress-plugin",
   "license": "GPL-2.0-or-later",
+  "homepage": "https://github.com/MainMoney-Inc/mm_aggr_woocommerce",
+  "authors": [
+    {
+      "name": "MainMoney SARL"
+    }
+  ],
+  "keywords": [
+    "mainmoney",
+    "payments",
+    "woocommerce",
+    "wordpress-plugin"
+  ],
+  "support": {
+    "issues": "https://github.com/MainMoney-Inc/mm_aggr_woocommerce/issues",
+    "source": "https://github.com/MainMoney-Inc/mm_aggr_woocommerce"
+  },
   "minimum-stability": "dev",
   "prefer-stable": true,
   "repositories": [

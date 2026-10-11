@@ -43,3 +43,10 @@ vendor/bin/phpstan analyse
 - Do not invent merchant API endpoints; use `/api/v1/schema/merchants/`.
 - Do not commit secrets. Do not depend on the WordPress plugin repository.
 - Local demos live under `examples/`. Downloaded WordPress core is gitignored.
+
+## Releases
+
+Packagist package: `mainmoney/mm-aggr-woocommerce` (GitHub webhook enabled). Bump the plugin header `Version`,
+update `CHANGELOG.md`, then push an annotated tag `vX.Y.Z`. The `Publish` workflow checks
+the tag against the header version, builds the installable zip with
+`scripts/build-zip.sh` and attaches it to the GitHub Release.
