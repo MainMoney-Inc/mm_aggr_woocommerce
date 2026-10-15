@@ -15,6 +15,7 @@ final class WC_Mm_Aggr_Plugin
 
         add_filter('woocommerce_payment_gateways', [self::class, 'gateways']);
         WC_Mm_Aggr_Rest::register();
+        WC_Mm_Aggr_Assets::register();
         WC_Mm_Aggr_Blocks::register();
     }
 

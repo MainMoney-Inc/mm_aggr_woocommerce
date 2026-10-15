@@ -23,6 +23,7 @@ SDK at `contrib/sdks/php`.
 composer install
 npm install
 npm run build
+npm run zip   # installable zip in build/
 ```
 
 ## Test

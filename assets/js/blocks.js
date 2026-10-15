@@ -12,7 +12,7 @@
     canMakePayment: function () {
       return true;
     },
-    content: createElement("div", { id: "mm-aggr-blocks-checkout" }),
+    content: createElement("div", { className: "mm-aggr-checkout", id: "mm-aggr-blocks-checkout" }),
     edit: createElement("div", { id: "mm-aggr-blocks-checkout-edit" }),
     supports: { features: ["products", "refunds"] },
   });

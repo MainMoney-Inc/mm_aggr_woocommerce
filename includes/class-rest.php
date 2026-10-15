@@ -5,7 +5,9 @@ declare(strict_types=1);
 use MainMoney\Aggregator\Exception\AggregatorException;
 use MainMoney\WooCommercePlugin\CheckoutSession;
 use MainMoney\WooCommercePlugin\ClientFactory;
+use MainMoney\WooCommercePlugin\CheckoutConfig;
 use MainMoney\WooCommercePlugin\OrderStatusMapper;
+use MainMoney\WooCommercePlugin\PaymentVerifier;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\WebhookService;
 
@@ -36,6 +38,11 @@ final class WC_Mm_Aggr_Rest
             'callback' => [self::class, 'proxy'],
             'permission_callback' => [self::class, 'requireSession'],
         ]);
+        register_rest_route($namespace, '/session', [
+            'methods' => 'POST',
+            'callback' => [self::class, 'session'],
+            'permission_callback' => '__return_true',
+        ]);
         register_rest_route($namespace, '/webhooks', [
             'methods' => 'POST',
             'callback' => [self::class, 'webhook'],
@@ -48,6 +55,51 @@ final class WC_Mm_Aggr_Rest
         $session = self::sessionFromRequest($request);
 
         return $session instanceof \WP_Error ? $session : true;
+    }
+
+    /**
+     * Creates (or reuses) a checkout session bound to the visitor's current cart total.
+     * The amount comes from the server-side cart, never from the browser.
+     */
+    public static function session(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
+    {
+        if (function_exists('wc_load_cart')) {
+            wc_load_cart();
+        }
+        $gateway = self::gateway();
+        if ($gateway === null || !WC_Mm_Aggr_Settings::fromGateway($gateway)->isConfigured()) {
+            return new \WP_Error('mm_aggr_unconfigured', 'MainMoney is not configured', ['status' => 503]);
+        }
+        $cart = WC()->cart;
+        if ($cart === null || $cart->is_empty()) {
+            return new \WP_Error('mm_aggr_empty_cart', 'The cart is empty', ['status' => 400]);
+        }
+        $cart->calculate_totals();
+        $amount = (string) wc_format_decimal($cart->get_total('edit'), wc_get_price_decimals());
+        $currency = get_woocommerce_currency();
+        $store = new WC_Mm_Aggr_Session_Store();
+        $session = null;
+        $existingToken = WC()->session !== null ? WC()->session->get('mm_aggr_token') : null;
+        if (is_string($existingToken) && $existingToken !== '') {
+            $found = $store->find($existingToken);
+            if ($found !== null && $found->amount === $amount && $found->currency === $currency) {
+                $session = $found;
+            }
+        }
+        if ($session === null) {
+            if (WC()->session !== null) {
+                WC()->session->set_customer_session_cookie(true);
+            }
+            $session = CheckoutSession::create(amount: $amount, currency: $currency, lockAmount: true);
+            $store->save($session);
+        }
+
+        return new \WP_REST_Response(CheckoutConfig::forSession(
+            rest_url('wc-mm-aggr/v1'),
+            rest_url('wc-mm-aggr/v1/status'),
+            $session,
+            str_starts_with(get_locale(), 'fr') ? 'fr' : 'en',
+        ), 200);
     }
 
     public static function proxy(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
@@ -94,7 +146,9 @@ final class WC_Mm_Aggr_Rest
                 $settings->webhookSecret,
             );
         } catch (AggregatorException $exception) {
-            return new \WP_Error('mm_aggr_webhook', $exception->getMessage(), ['status' => 401]);
+            wc_get_logger()->warning('MainMoney webhook rejected: '.$exception->getMessage(), ['source' => 'mm-aggr']);
+
+            return new \WP_Error('mm_aggr_webhook', 'Invalid webhook', ['status' => 401]);
         }
         $reference = isset($payload['merchant_reference']) && is_string($payload['merchant_reference'])
             ? $payload['merchant_reference']
@@ -108,16 +162,31 @@ final class WC_Mm_Aggr_Rest
             ]);
             $order = $orders[0] ?? null;
             if ($order instanceof WC_Order) {
-                $order->add_order_note(sprintf('MainMoney webhook: %s', $status));
-                if (OrderStatusMapper::isPaid($status)) {
-                    $order->payment_complete(isset($payload['transaction_id']) && is_string($payload['transaction_id']) ? $payload['transaction_id'] : '');
-                } elseif (OrderStatusMapper::isFailed($status)) {
-                    $order->update_status('failed', 'MainMoney deposit '.$status);
-                }
+                self::applyWebhook($order, $payload, $status);
             }
         }
 
         return new \WP_REST_Response(['received' => true], 200);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private static function applyWebhook(WC_Order $order, array $payload, string $status): void
+    {
+        if ($order->is_paid() || isset($payload['refund'])) {
+            return;
+        }
+        $order->add_order_note(sprintf('MainMoney webhook: %s', $status));
+        $outcome = PaymentVerifier::evaluate($payload, (string) $order->get_total('edit'), $order->get_currency());
+        if ($outcome === PaymentVerifier::PAID) {
+            $transactionId = isset($payload['internal_reference']) && is_string($payload['internal_reference']) ? $payload['internal_reference'] : '';
+            $order->payment_complete($transactionId);
+        } elseif ($outcome === PaymentVerifier::MISMATCH) {
+            $order->update_status('on-hold', 'MainMoney reported a payment whose amount or currency does not match this order. Check it manually.');
+        } elseif ($outcome === PaymentVerifier::FAILED) {
+            $order->update_status('failed', 'MainMoney deposit '.$status);
+        }
     }
 
     private static function sessionFromRequest(\WP_REST_Request $request): CheckoutSession|\WP_Error

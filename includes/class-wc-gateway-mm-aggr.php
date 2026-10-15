@@ -3,9 +3,8 @@
 declare(strict_types=1);
 
 use MainMoney\Aggregator\Exception\AggregatorException;
-use MainMoney\WooCommercePlugin\CheckoutSession;
 use MainMoney\WooCommercePlugin\ClientFactory;
-use MainMoney\WooCommercePlugin\OrderStatusMapper;
+use MainMoney\WooCommercePlugin\PaymentVerifier;
 use MainMoney\WooCommercePlugin\RefundService;
 
 class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
@@ -76,21 +75,19 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         ];
     }
 
+    public function is_available(): bool
+    {
+        if (!parent::is_available()) {
+            return false;
+        }
+
+        return WC_Mm_Aggr_Settings::fromGateway($this)->isConfigured();
+    }
+
     public function payment_fields(): void
     {
-        $total = function_exists('WC') && WC()->cart !== null ? (string) WC()->cart->get_total('edit') : '';
-        $currency = function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : '';
-        $existing = function_exists('WC') && WC()->session !== null ? WC()->session->get('mm_aggr_reference') : null;
-        $session = CheckoutSession::create(
-            amount: $total !== '' ? $total : null,
-            currency: $currency !== '' ? $currency : null,
-            reference: is_string($existing) && $existing !== '' ? $existing : null,
-            lockAmount: true,
-        );
-        (new WC_Mm_Aggr_Session_Store())->save($session);
-        $targetId = 'mm-aggr-checkout-'.(function_exists('wp_unique_id') ? wp_unique_id() : uniqid());
-        WC_Mm_Aggr_Assets::enqueue($targetId, $session);
-        echo '<div class="mm-aggr-checkout" id="'.esc_attr($targetId).'"></div>';
+        // The checkout widget is mounted by assets/js/checkout.js, which requests a cart-bound session over REST.
+        echo '<div class="mm-aggr-checkout" id="mm-aggr-checkout"></div>';
     }
 
     /**
@@ -106,16 +103,33 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         }
         $reference = function_exists('WC') && WC()->session !== null ? WC()->session->get('mm_aggr_reference') : null;
         if (!is_string($reference) || $reference === '') {
-            $reference = 'WC-'.$order->get_id().'-'.bin2hex(random_bytes(4));
+            wc_add_notice(__('Please complete the MainMoney payment before placing the order.', 'woocommerce-mm-aggr'), 'error');
+
+            return ['result' => 'failure'];
+        }
+        $payload = $this->currentDepositStatus($reference);
+        $outcome = PaymentVerifier::evaluate($payload, (string) $order->get_total('edit'), $order->get_currency());
+        if ($outcome === PaymentVerifier::UNKNOWN || $outcome === PaymentVerifier::FAILED) {
+            wc_add_notice(__('The MainMoney payment was not completed. Please complete the payment and try again.', 'woocommerce-mm-aggr'), 'error');
+
+            return ['result' => 'failure'];
         }
         $order->update_meta_data('_mm_aggr_reference', $reference);
+        if (isset($payload['provider_code']) && is_string($payload['provider_code'])) {
+            $order->update_meta_data('_mm_aggr_provider', $payload['provider_code']);
+        }
         $order->save();
-        $statusCode = $this->currentDepositStatus($reference);
-        if (OrderStatusMapper::isPaid($statusCode)) {
-            $order->payment_complete();
-            $order->add_order_note('MainMoney deposit SUCCESS');
+        if ($outcome === PaymentVerifier::PAID) {
+            $order->payment_complete($this->transactionId($payload));
+            $order->add_order_note(__('MainMoney deposit SUCCESS.', 'woocommerce-mm-aggr'));
+        } elseif ($outcome === PaymentVerifier::MISMATCH) {
+            $order->update_status('on-hold', __('MainMoney reported a payment whose amount or currency does not match this order. Check it manually.', 'woocommerce-mm-aggr'));
         } else {
-            $order->update_status('on-hold', __('Awaiting MainMoney payment.', 'woocommerce-mm-aggr'));
+            $order->update_status('on-hold', __('Awaiting MainMoney payment confirmation.', 'woocommerce-mm-aggr'));
+        }
+        if (function_exists('WC') && WC()->session !== null) {
+            WC()->session->set('mm_aggr_reference', null);
+            WC()->session->set('mm_aggr_token', null);
         }
         if (function_exists('WC') && WC()->cart !== null) {
             WC()->cart->empty_cart();
@@ -132,7 +146,7 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
      * @param mixed $amount
      * @param mixed $reason
      */
-    public function process_refund($order_id, $amount = null, $reason = ''): bool
+    public function process_refund($order_id, $amount = null, $reason = '')
     {
         $order = wc_get_order($order_id);
         if (!$order instanceof WC_Order) {
@@ -140,7 +154,7 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         }
         $original = (string) $order->get_meta('_mm_aggr_reference');
         if ($original === '') {
-            throw new \RuntimeException('Missing MainMoney merchant reference');
+            return new \WP_Error('mm_aggr_refund', __('This order has no MainMoney payment reference.', 'woocommerce-mm-aggr'));
         }
         $settings = WC_Mm_Aggr_Settings::fromGateway($this);
         $client = ClientFactory::fromSettings($settings);
@@ -159,26 +173,46 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         try {
             (new RefundService())->create($client, $payload, $refundReference);
         } catch (AggregatorException $exception) {
-            throw new \RuntimeException($exception->getMessage(), 0, $exception);
+            wc_get_logger()->warning('MainMoney refund failed: '.$exception->getMessage(), ['source' => 'mm-aggr']);
+
+            return new \WP_Error('mm_aggr_refund', __('MainMoney could not process the refund. See WooCommerce logs for details.', 'woocommerce-mm-aggr'));
         }
         $order->add_order_note(sprintf('MainMoney refund requested: %s', $refundReference));
 
         return true;
     }
 
-    private function currentDepositStatus(string $reference): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function currentDepositStatus(string $reference): array
     {
         $settings = WC_Mm_Aggr_Settings::fromGateway($this);
         if (!$settings->isConfigured()) {
-            return '';
+            return [];
         }
         try {
             $status = ClientFactory::fromSettings($settings)->status->check('deposit', $reference);
-        } catch (AggregatorException) {
-            return '';
-        }
-        $code = $status['status'] ?? '';
+        } catch (AggregatorException $exception) {
+            wc_get_logger()->warning('MainMoney status check failed: '.$exception->getMessage(), ['source' => 'mm-aggr']);
 
-        return is_string($code) ? $code : '';
+            return [];
+        }
+
+        return $status;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function transactionId(array $payload): string
+    {
+        foreach (['internal_reference', 'transaction_id'] as $key) {
+            if (isset($payload[$key]) && is_string($payload[$key])) {
+                return $payload[$key];
+            }
+        }
+
+        return '';
     }
 }

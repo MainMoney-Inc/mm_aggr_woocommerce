@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType;
-use MainMoney\WooCommercePlugin\CheckoutSession;
 
 final class WC_Mm_Aggr_Blocks_Payment_Method extends AbstractPaymentMethodType
 {
@@ -27,15 +26,7 @@ final class WC_Mm_Aggr_Blocks_Payment_Method extends AbstractPaymentMethodType
      */
     public function get_payment_method_script_handles(): array
     {
-        $total = function_exists('WC') && WC()->cart !== null ? (string) WC()->cart->get_total('edit') : '';
-        $currency = function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : '';
-        $session = CheckoutSession::create(
-            amount: $total !== '' ? $total : null,
-            currency: $currency !== '' ? $currency : null,
-            lockAmount: true,
-        );
-        (new WC_Mm_Aggr_Session_Store())->save($session);
-        WC_Mm_Aggr_Assets::enqueue('mm-aggr-blocks-checkout', $session);
+        WC_Mm_Aggr_Assets::enqueue();
         wp_enqueue_script(
             'wc-mm-aggr-blocks',
             WC_MM_AGGR_URL.'assets/js/blocks.js',

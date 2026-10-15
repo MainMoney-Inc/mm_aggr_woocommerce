@@ -12,6 +12,7 @@ trap 'rm -rf "$stage"' EXIT
 
 mkdir -p "$stage/$slug" "$out"
 rsync -a --exclude-from=- ./ "$stage/$slug/" <<'EXCLUDE'
+.git
 .git/
 .github/
 .cursor/
@@ -34,6 +35,9 @@ phpstan.neon.dist
 phpunit.xml.dist
 composer.lock
 *.map
+*.ts
+.gitkeep
+.phpunit.result.cache
 EXCLUDE
 
 (cd "$stage/$slug" && composer install --no-dev --no-interaction --optimize-autoloader --classmap-authoritative)

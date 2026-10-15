@@ -1578,9 +1578,26 @@
   }
 
   // assets/js/bootstrap.ts
-  async function mountOne(cfg) {
-    const root = document.getElementById(cfg.targetId ?? "mm-aggr-checkout");
-    if (root === null) {
+  var SELECTOR = ".mm-aggr-checkout";
+  var MOUNTED = "data-mm-mounted";
+  function placeOrder() {
+    const classic = document.querySelector("form.checkout #place_order");
+    if (classic !== null) {
+      classic.click();
+      return;
+    }
+    document.querySelector(".wc-block-components-checkout-place-order-button")?.click();
+  }
+  async function mountOne(root, plugin) {
+    const response = await fetch(plugin.sessionUrl, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    });
+    const cfg = await response.json();
+    if (!response.ok) {
+      root.textContent = cfg.message ?? "MainMoney is unavailable.";
       return;
     }
     const session = createSession({
@@ -1597,13 +1614,37 @@
       reference: cfg.reference
     });
     await checkout.loadCountries();
-    mountCheckout(root, checkout, cfg.logoUrl !== void 0 ? { logoUrl: cfg.logoUrl } : {});
+    mountCheckout(root, checkout, plugin.logoUrl !== void 0 ? { logoUrl: plugin.logoUrl } : {});
+    let submitted = false;
+    checkout.subscribe((state) => {
+      if (submitted || state.step !== "terminal") {
+        return;
+      }
+      if ((state.status?.status ?? "").toUpperCase() === "SUCCESS") {
+        submitted = true;
+        root.dispatchEvent(new CustomEvent("mm-aggr:success", { bubbles: true }));
+        placeOrder();
+      }
+    });
+  }
+  function scan() {
+    const plugin = window.mmAggrConfig;
+    if (plugin === void 0) {
+      return;
+    }
+    document.querySelectorAll(SELECTOR).forEach((root) => {
+      if (root.hasAttribute(MOUNTED)) {
+        return;
+      }
+      root.setAttribute(MOUNTED, "1");
+      mountOne(root, plugin).catch(() => {
+        root.textContent = "MainMoney is unavailable.";
+      });
+    });
   }
   function boot() {
-    const configs = window.mmAggrCheckouts ?? [];
-    for (const cfg of configs) {
-      void mountOne(cfg);
-    }
+    scan();
+    new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

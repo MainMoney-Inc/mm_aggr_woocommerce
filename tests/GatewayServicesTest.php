@@ -8,6 +8,7 @@ use MainMoney\Aggregator\Http\HttpResponse;
 use MainMoney\WooCommercePlugin\CheckoutSession;
 use MainMoney\WooCommercePlugin\ClientFactory;
 use MainMoney\WooCommercePlugin\OrderStatusMapper;
+use MainMoney\WooCommercePlugin\PaymentVerifier;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\RefundService;
 use MainMoney\WooCommercePlugin\Settings;
@@ -58,6 +59,42 @@ final class GatewayServicesTest extends TestCase
         self::assertSame('processing', OrderStatusMapper::wcStatus('SUCCESS'));
         self::assertSame('failed', OrderStatusMapper::wcStatus('FAILED'));
         self::assertSame('on-hold', OrderStatusMapper::wcStatus('PENDING'));
+    }
+
+    public function testPaymentVerifier(): void
+    {
+        $paid = ['status' => 'SUCCESS', 'amount' => '40.00', 'currency' => 'USD'];
+        self::assertSame(PaymentVerifier::PAID, PaymentVerifier::evaluate($paid, '40.00', 'USD'));
+        self::assertSame(PaymentVerifier::PAID, PaymentVerifier::evaluate($paid, '40', 'usd'));
+        self::assertSame(PaymentVerifier::MISMATCH, PaymentVerifier::evaluate($paid, '41.00', 'USD'));
+        self::assertSame(PaymentVerifier::MISMATCH, PaymentVerifier::evaluate($paid, '40.00', 'CDF'));
+        self::assertSame(PaymentVerifier::MISMATCH, PaymentVerifier::evaluate(['status' => 'SUCCESS'], '40.00', 'USD'));
+        self::assertSame(PaymentVerifier::PENDING, PaymentVerifier::evaluate(['status' => 'PENDING'], '40.00', 'USD'));
+        self::assertSame(PaymentVerifier::FAILED, PaymentVerifier::evaluate(['status' => 'FAILED'], '40.00', 'USD'));
+        self::assertSame(PaymentVerifier::UNKNOWN, PaymentVerifier::evaluate([], '40.00', 'USD'));
+    }
+
+    public function testDepositStatusIsCheckedByReference(): void
+    {
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'SUCCESS', 'amount' => '5.00', 'currency' => 'USD']));
+        $session = new CheckoutSession('tok', 'WC-9', '5.00', 'USD', true, time() + 60);
+        $result = (new ProxyService($client))->handle('GET', 'status', [], [], $session);
+        self::assertSame(200, $result['status']);
+        self::assertStringContainsString('/transactions/status/check/deposit/', $mock->history[1]['uri']);
+        self::assertSame('WC-9', $mock->history[1]['options']['json']['reference'] ?? null);
+    }
+
+    public function testBrowserCannotSetFees(): void
+    {
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']));
+        $session = new CheckoutSession('tok', 'WC-2', '10.00', 'USD', true, time() + 60);
+        (new ProxyService($client))->handle('POST', 'deposits', [], ['fees' => '0', 'fee_bearer' => 'customer'], $session);
+        self::assertArrayNotHasKey('fees', $mock->history[1]['options']['json']);
+        self::assertArrayNotHasKey('fee_bearer', $mock->history[1]['options']['json']);
     }
 
     private function settings(): Settings

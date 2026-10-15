@@ -40,7 +40,8 @@
   },
   "scripts": {
     "test": "phpunit",
-    "phpstan": "phpstan analyse"
+    "phpstan": "phpstan analyse",
+    "zip": "bash scripts/build-zip.sh"
   },
   "config": {
     "sort-packages": true
