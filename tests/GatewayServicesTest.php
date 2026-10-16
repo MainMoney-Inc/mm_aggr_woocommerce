@@ -12,6 +12,7 @@ use MainMoney\WooCommercePlugin\PaymentVerifier;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\RefundService;
 use MainMoney\WooCommercePlugin\Settings;
+use MainMoney\WooCommercePlugin\SettingsSanitizer;
 use PHPUnit\Framework\TestCase;
 
 final class GatewayServicesTest extends TestCase
@@ -95,6 +96,20 @@ final class GatewayServicesTest extends TestCase
         (new ProxyService($client))->handle('POST', 'deposits', [], ['fees' => '0', 'fee_bearer' => 'customer'], $session);
         self::assertArrayNotHasKey('fees', $mock->history[1]['options']['json']);
         self::assertArrayNotHasKey('fee_bearer', $mock->history[1]['options']['json']);
+    }
+
+    public function testSettingsSanitizerKeepsBlankSecrets(): void
+    {
+        $out = SettingsSanitizer::sanitize(
+            ['title' => ' <b>Pay</b> ', 'client_id' => 'cid', 'secret' => '', 'webhook_secret' => 'new', 'test' => '1', 'base_uri' => 'nope'],
+            ['secret' => 'kept', 'webhook_secret' => 'old'],
+        );
+        self::assertSame('Pay', $out['title']);
+        self::assertSame('kept', $out['secret']);
+        self::assertSame('new', $out['webhook_secret']);
+        self::assertSame('yes', $out['test']);
+        self::assertSame('no', $out['enabled']);
+        self::assertSame('', $out['base_uri']);
     }
 
     private function settings(): Settings

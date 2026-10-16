@@ -23,6 +23,11 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         $this->init_settings();
         $this->title = $this->get_option('title', $this->method_title);
         $this->enabled = $this->get_option('enabled', 'yes');
+        $this->method_description .= ' '.sprintf(
+            /* translators: %s admin menu url */
+            __('Full configuration and connection test: <a href="%s">MainMoney menu</a>.', 'woocommerce-mm-aggr'),
+            esc_url(admin_url('admin.php?page=mm-aggr')),
+        );
         add_action('woocommerce_update_options_payment_gateways_'.$this->id, [$this, 'process_admin_options']);
     }
 

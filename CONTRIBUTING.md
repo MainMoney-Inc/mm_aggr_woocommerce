@@ -23,7 +23,7 @@ SDK at `contrib/sdks/php`.
 composer install
 npm install
 npm run build
-npm run zip   # installable zip in build/
+npm run zip   # bumps patch version (or `bash scripts/release.sh minor|major`), tests, builds the zip, commits and tags; add --push to publish
 ```
 
 ## Test

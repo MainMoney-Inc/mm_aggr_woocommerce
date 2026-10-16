@@ -41,7 +41,7 @@
   "scripts": {
     "test": "phpunit",
     "phpstan": "phpstan analyse",
-    "zip": "bash scripts/build-zip.sh"
+    "zip": "bash scripts/release.sh"
   },
   "config": {
     "sort-packages": true

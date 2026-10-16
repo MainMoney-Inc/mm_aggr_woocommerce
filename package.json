@@ -6,7 +6,8 @@
   "license": "GPL-2.0-or-later",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "zip": "node scripts/build.mjs && bash scripts/build-zip.sh"
+    "zip": "bash scripts/release.sh",
+    "zip:dry": "bash scripts/release.sh --dry-run"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

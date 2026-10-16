@@ -71,8 +71,23 @@ final class WC_Mm_Aggr_Rest
             return new \WP_Error('mm_aggr_unconfigured', 'MainMoney is not configured', ['status' => 503]);
         }
         $cart = WC()->cart;
+        if ($cart !== null && $cart->is_empty() && method_exists($cart, 'get_cart_from_session')) {
+            // REST runs after wp_loaded, when WooCommerce has already skipped restoring the cart from the session.
+            $cart->get_cart_from_session();
+        }
         if ($cart === null || $cart->is_empty()) {
-            return new \WP_Error('mm_aggr_empty_cart', 'The cart is empty', ['status' => 400]);
+            $hasCookie = false;
+            foreach (array_keys($_COOKIE) as $name) {
+                if (str_starts_with((string) $name, 'wp_woocommerce_session_')) {
+                    $hasCookie = true;
+                }
+            }
+            wc_get_logger()->warning(
+                'MainMoney session: cart empty, WooCommerce session cookie '.($hasCookie ? 'present' : 'missing'),
+                ['source' => 'mm-aggr'],
+            );
+
+            return new \WP_Error('mm_aggr_empty_cart', 'Your cart session could not be read. Please reload the page.', ['status' => 409]);
         }
         $cart->calculate_totals();
         $amount = (string) wc_format_decimal($cart->get_total('edit'), wc_get_price_decimals());
@@ -94,12 +109,15 @@ final class WC_Mm_Aggr_Rest
             $store->save($session);
         }
 
-        return new \WP_REST_Response(CheckoutConfig::forSession(
+        $response = new \WP_REST_Response(CheckoutConfig::forSession(
             rest_url('wc-mm-aggr/v1'),
             rest_url('wc-mm-aggr/v1/status'),
             $session,
             str_starts_with(get_locale(), 'fr') ? 'fr' : 'en',
         ), 200);
+        $response->header('Cache-Control', 'no-store');
+
+        return $response;
     }
 
     public static function proxy(\WP_REST_Request $request): \WP_REST_Response|\WP_Error

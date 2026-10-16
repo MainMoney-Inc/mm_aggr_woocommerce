@@ -35,6 +35,7 @@ phpstan.neon.dist
 phpunit.xml.dist
 composer.lock
 *.map
+*.swp
 *.ts
 .gitkeep
 .phpunit.result.cache

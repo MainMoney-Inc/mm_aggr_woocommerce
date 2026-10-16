@@ -12,10 +12,14 @@ final class WC_Mm_Aggr_Plugin
         require_once WC_MM_AGGR_DIR.'includes/class-assets.php';
         require_once WC_MM_AGGR_DIR.'includes/class-wc-gateway-mm-aggr.php';
         require_once WC_MM_AGGR_DIR.'includes/class-blocks.php';
+        require_once WC_MM_AGGR_DIR.'includes/class-admin-menu.php';
 
         add_filter('woocommerce_payment_gateways', [self::class, 'gateways']);
         WC_Mm_Aggr_Rest::register();
         WC_Mm_Aggr_Assets::register();
+        if (is_admin()) {
+            WC_Mm_Aggr_Admin_Menu::register();
+        }
         WC_Mm_Aggr_Blocks::register();
     }
 

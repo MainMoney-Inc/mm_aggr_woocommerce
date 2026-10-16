@@ -29,7 +29,8 @@ To build the zip yourself from a checkout (needs PHP 8.2+, Composer, Node 20+, `
 ```bash
 composer install
 npm install
-npm run zip          # writes build/woocommerce-mm-aggr-<version>.zip
+npm run zip          # next version + tests + build/woocommerce-mm-aggr-<version>.zip + git tag
+npm run zip:dry      # build a zip from the current tree without bumping or tagging
 ```
 
 ## 2. Install into an existing store
@@ -47,7 +48,7 @@ uploaded a source checkout instead of the release zip.
 
 ## 3. Configure
 
-WooCommerce → Settings → Payments → **MainMoney**:
+Open the **MainMoney** entry in the WordPress admin sidebar (or WooCommerce → Settings → Payments → MainMoney). The sidebar page also has a webhook URL, status checks and a **Test connection** button:
 
 | Field | Value |
 | --- | --- |
@@ -105,7 +106,7 @@ have been paid through this gateway).
 ## Troubleshooting
 
 - **MainMoney missing at checkout:** plugin inactive, gateway disabled, or Client ID/secret empty.
-- **Widget blank or "MainMoney is unavailable":** open the browser console/network tab; `POST /wp-json/wc-mm-aggr/v1/session` must return 200. A 503 means credentials are not saved; a 400 means the cart is empty; a security/cache plugin may be blocking REST.
+- **Widget blank or "MainMoney is unavailable":** open the browser console/network tab; `POST /wp-json/wc-mm-aggr/v1/session` must return 200. A 503 means credentials are not saved; a 409 means the cart session was not readable (reload; check that caches/CDN do not strip cookies on `/wp-json/`); a security/cache plugin may be blocking REST.
 - **Order stays *On hold*:** the payment is still pending or the webhook is not arriving. Check the webhook URL and secret; failures are logged under WooCommerce → Status → Logs (source `mm-aggr`).
 - **Webhook 401:** the webhook secret in WooCommerce differs from the one in the aggregator.
 - **"Payment was not completed" at checkout:** the customer pressed Place order before approving; they should finish the payment in the widget first.
