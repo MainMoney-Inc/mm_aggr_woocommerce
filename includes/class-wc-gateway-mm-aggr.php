@@ -115,7 +115,7 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         }
         $payload = $this->currentDepositStatus($reference);
         $outcome = PaymentVerifier::evaluate($payload, (string) $order->get_total('edit'), $order->get_currency());
-        if ($outcome === PaymentVerifier::UNKNOWN || $outcome === PaymentVerifier::FAILED) {
+        if ($outcome === PaymentVerifier::FAILED) {
             wc_add_notice(__('The MainMoney payment was not completed. Please complete the payment and try again.', 'woocommerce-mm-aggr'), 'error');
 
             return ['result' => 'failure'];
@@ -125,13 +125,15 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
             $order->update_meta_data('_mm_aggr_provider', $payload['provider_code']);
         }
         $order->save();
-        if ($outcome === PaymentVerifier::PAID) {
-            $order->payment_complete($this->transactionId($payload));
-            $order->add_order_note(__('MainMoney deposit SUCCESS.', 'woocommerce-mm-aggr'));
-        } elseif ($outcome === PaymentVerifier::MISMATCH) {
-            $order->update_status('on-hold', __('MainMoney reported a payment whose amount or currency does not match this order. Check it manually.', 'woocommerce-mm-aggr'));
-        } else {
-            $order->update_status('on-hold', __('Awaiting MainMoney payment confirmation.', 'woocommerce-mm-aggr'));
+        // Temporary status: the deposit may still be PENDING at the provider. The webhook, the thank-you page
+        // poll and the reconciler move the order on as soon as the final result is known.
+        $order->update_status('on-hold', __('Awaiting MainMoney payment confirmation.', 'woocommerce-mm-aggr'));
+        $early = WC_Mm_Aggr_Order_Sync::takeStashed($reference);
+        if ($early !== null) {
+            WC_Mm_Aggr_Order_Sync::apply($order, $early);
+        }
+        if ($payload !== []) {
+            WC_Mm_Aggr_Order_Sync::apply($order, $payload);
         }
         if (function_exists('WC') && WC()->session !== null) {
             WC()->session->set('mm_aggr_reference', null);
@@ -206,19 +208,5 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         }
 
         return $status;
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function transactionId(array $payload): string
-    {
-        foreach (['internal_reference', 'transaction_id'] as $key) {
-            if (isset($payload[$key]) && is_string($payload[$key])) {
-                return $payload[$key];
-            }
-        }
-
-        return '';
     }
 }

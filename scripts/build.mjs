@@ -23,6 +23,16 @@ await esbuild.build({
   },
 });
 
+await esbuild.build({
+  absWorkingDir: pluginRoot,
+  entryPoints: [path.join(pluginRoot, "assets/js/order-status.ts")],
+  bundle: true,
+  format: "iife",
+  outfile: path.join(pluginRoot, "assets/js/order-status.js"),
+  platform: "browser",
+  target: ["es2022"],
+});
+
 cpSync(
   path.join(sdkRoot, "packages/checkout/src/styles.css"),
   path.join(pluginRoot, "assets/js/checkout.css"),

@@ -8,6 +8,8 @@ final class WC_Mm_Aggr_Plugin
     {
         require_once WC_MM_AGGR_DIR.'includes/class-session-store.php';
         require_once WC_MM_AGGR_DIR.'includes/class-settings.php';
+        require_once WC_MM_AGGR_DIR.'includes/class-order-sync.php';
+        require_once WC_MM_AGGR_DIR.'includes/class-pending-orders.php';
         require_once WC_MM_AGGR_DIR.'includes/class-rest.php';
         require_once WC_MM_AGGR_DIR.'includes/class-assets.php';
         require_once WC_MM_AGGR_DIR.'includes/class-wc-gateway-mm-aggr.php';
@@ -20,6 +22,7 @@ final class WC_Mm_Aggr_Plugin
 
         add_filter('woocommerce_payment_gateways', [self::class, 'gateways']);
         WC_Mm_Aggr_Rest::register();
+        WC_Mm_Aggr_Pending_Orders::register();
         WC_Mm_Aggr_Assets::register();
         if (is_admin()) {
             WC_Mm_Aggr_Admin_Menu::register();

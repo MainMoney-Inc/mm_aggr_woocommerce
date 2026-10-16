@@ -154,6 +154,7 @@
     failed: "Payment failed",
     confirming: "Confirming payment",
     polling: "Waiting for confirmation",
+    slow: "Your payment request has been sent. We are waiting for the provider to confirm success or failure. Please keep this page open.",
     limits: "Amount must be between {min} and {max}",
     required: "This field is required",
     balanceRejected: "Balance validation failed",
@@ -205,6 +206,7 @@
     failed: "Paiement \xE9chou\xE9",
     confirming: "Confirmation du paiement",
     polling: "En attente de confirmation",
+    slow: "Votre demande de paiement a \xE9t\xE9 envoy\xE9e. Nous attendons la confirmation (succ\xE8s ou \xE9chec) de l'op\xE9rateur. Veuillez garder cette page ouverte.",
     limits: "Le montant doit \xEAtre compris entre {min} et {max}",
     required: "Ce champ est obligatoire",
     balanceRejected: "Validation du solde \xE9chou\xE9e",
@@ -466,6 +468,7 @@
       feeBearer: "MERCHANT",
       customerEmail: "",
       canPay: false,
+      slow: false,
       theme
     };
     let lastMatchedIdentifier = "";
@@ -842,16 +845,28 @@
           return;
         }
         state.step = "polling";
+        state.slow = false;
         notify();
-        const status = await pollStatus({
-          pollUrl: options.pollUrl ?? "",
-          pollHeaders: options.pollHeaders ?? {},
-          fetchImpl: session.fetch,
-          reference,
-          operation: state.operation,
-          intervalMs: options.pollIntervalMs ?? 2e3,
-          signal: pollAbort.signal
-        });
+        const slowTimer = setTimeout(() => {
+          state.slow = true;
+          notify();
+        }, options.slowNoticeAfterMs ?? 3e4);
+        pollAbort.signal.addEventListener("abort", () => clearTimeout(slowTimer), { once: true });
+        let status;
+        try {
+          status = await pollStatus({
+            pollUrl: options.pollUrl ?? "",
+            pollHeaders: options.pollHeaders ?? {},
+            fetchImpl: session.fetch,
+            reference,
+            operation: state.operation,
+            intervalMs: options.pollIntervalMs ?? 1e3,
+            signal: pollAbort.signal
+          });
+        } finally {
+          clearTimeout(slowTimer);
+        }
+        state.slow = false;
         state.status = status;
         state.step = "terminal";
         notify();
@@ -1422,6 +1437,12 @@
     const caption = document.createElement("div");
     caption.textContent = state.step === "polling" ? checkout.t("polling") : checkout.t("confirming");
     wrap.append(spinner, caption);
+    if (state.step === "polling" && state.slow) {
+      const notice = document.createElement("div");
+      notice.className = "mm-confirm-slow";
+      notice.textContent = checkout.t("slow");
+      wrap.append(notice);
+    }
     return wrap;
   }
   function messageStep(text) {
@@ -1580,6 +1601,7 @@
   // assets/js/bootstrap.ts
   var SELECTOR = ".mm-aggr-checkout";
   var MOUNTED = "data-mm-mounted";
+  var FAILED = /* @__PURE__ */ new Set(["FAILED", "CANCELLED", "CANCELED", "EXPIRED"]);
   function placeOrder() {
     const classic = document.querySelector("form.checkout #place_order");
     if (classic !== null) {
@@ -1621,14 +1643,17 @@
     mountCheckout(root, checkout, plugin.logoUrl !== void 0 ? { logoUrl: plugin.logoUrl } : {});
     let submitted = false;
     checkout.subscribe((state) => {
-      if (submitted || state.step !== "terminal") {
+      if (submitted) {
         return;
       }
-      if ((state.status?.status ?? "").toUpperCase() === "SUCCESS") {
-        submitted = true;
-        root.dispatchEvent(new CustomEvent("mm-aggr:success", { bubbles: true }));
-        placeOrder();
+      const status = (state.status?.status ?? "").toUpperCase();
+      const accepted = state.step === "polling" || state.step === "ongoing" || state.step === "terminal" && status === "SUCCESS";
+      if (!accepted || FAILED.has(status)) {
+        return;
       }
+      submitted = true;
+      root.dispatchEvent(new CustomEvent("mm-aggr:success", { bubbles: true }));
+      placeOrder();
     });
   }
   function scan() {

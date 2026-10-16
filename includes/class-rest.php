@@ -6,7 +6,7 @@ use MainMoney\Aggregator\Exception\AggregatorException;
 use MainMoney\WooCommercePlugin\CheckoutSession;
 use MainMoney\WooCommercePlugin\ClientFactory;
 use MainMoney\WooCommercePlugin\CheckoutConfig;
-use MainMoney\WooCommercePlugin\OrderStatusMapper;
+use MainMoney\WooCommercePlugin\OrderSyncPolicy;
 use MainMoney\WooCommercePlugin\PaymentVerifier;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\WebhookService;
@@ -41,6 +41,11 @@ final class WC_Mm_Aggr_Rest
         register_rest_route($namespace, '/session', [
             'methods' => 'POST',
             'callback' => [self::class, 'session'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route($namespace, '/orders/(?P<id>\d+)/status', [
+            'methods' => 'GET',
+            'callback' => [self::class, 'orderStatus'],
             'permission_callback' => '__return_true',
         ]);
         register_rest_route($namespace, '/webhooks', [
@@ -175,8 +180,7 @@ final class WC_Mm_Aggr_Rest
         $reference = isset($payload['merchant_reference']) && is_string($payload['merchant_reference'])
             ? $payload['merchant_reference']
             : '';
-        $status = isset($payload['status']) && is_string($payload['status']) ? $payload['status'] : '';
-        if ($reference !== '' && function_exists('wc_get_orders')) {
+        if ($reference !== '' && !isset($payload['refund']) && function_exists('wc_get_orders')) {
             $orders = wc_get_orders([
                 'limit' => 1,
                 'meta_key' => '_mm_aggr_reference',
@@ -184,7 +188,12 @@ final class WC_Mm_Aggr_Rest
             ]);
             $order = $orders[0] ?? null;
             if ($order instanceof WC_Order) {
-                self::applyWebhook($order, $payload, $status);
+                $status = isset($payload['status']) && is_string($payload['status']) ? $payload['status'] : '';
+                $order->add_order_note(sprintf('MainMoney webhook: %s', $status));
+                WC_Mm_Aggr_Order_Sync::apply($order, $payload);
+            } else {
+                // The webhook beat order creation: keep it for process_payment.
+                WC_Mm_Aggr_Order_Sync::stash($reference, $payload);
             }
         }
 
@@ -192,23 +201,31 @@ final class WC_Mm_Aggr_Rest
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * Polled by the thank-you page. Authorised by the order key, so guests can use it.
      */
-    private static function applyWebhook(WC_Order $order, array $payload, string $status): void
+    public static function orderStatus(\WP_REST_Request $request): \WP_REST_Response|\WP_Error
     {
-        if ($order->is_paid() || isset($payload['refund'])) {
-            return;
+        $order = wc_get_order((int) $request['id']);
+        $key = (string) $request->get_param('key');
+        if (!$order instanceof WC_Order || $order->get_payment_method() !== 'mm_aggr' || $key === '' || !hash_equals($order->get_order_key(), $key)) {
+            return new \WP_Error('mm_aggr_order', 'Order not found', ['status' => 404]);
         }
-        $order->add_order_note(sprintf('MainMoney webhook: %s', $status));
-        $outcome = PaymentVerifier::evaluate($payload, (string) $order->get_total('edit'), $order->get_currency());
-        if ($outcome === PaymentVerifier::PAID) {
-            $transactionId = isset($payload['internal_reference']) && is_string($payload['internal_reference']) ? $payload['internal_reference'] : '';
-            $order->payment_complete($transactionId);
-        } elseif ($outcome === PaymentVerifier::MISMATCH) {
-            $order->update_status('on-hold', 'MainMoney reported a payment whose amount or currency does not match this order. Check it manually.');
-        } elseif ($outcome === PaymentVerifier::FAILED) {
-            $order->update_status('failed', 'MainMoney deposit '.$status);
+        $outcome = PaymentVerifier::UNKNOWN;
+        $gateway = self::gateway();
+        if ($gateway !== null && $order->has_status('on-hold')) {
+            $outcome = WC_Mm_Aggr_Order_Sync::refresh($order, $gateway);
+            $order = wc_get_order($order->get_id());
         }
+        if (!$order instanceof WC_Order) {
+            return new \WP_Error('mm_aggr_order', 'Order not found', ['status' => 404]);
+        }
+        $response = new \WP_REST_Response([
+            'state' => OrderSyncPolicy::publicState($order->get_status(), $order->is_paid(), $outcome),
+            'retry_url' => $order->get_checkout_payment_url(),
+        ], 200);
+        $response->header('Cache-Control', 'no-store');
+
+        return $response;
     }
 
     private static function sessionFromRequest(\WP_REST_Request $request): CheckoutSession|\WP_Error

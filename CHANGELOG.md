@@ -7,6 +7,8 @@
 
 ## Unreleased
 
+- feat: slow provider confirmations. The order is placed **On hold** as soon as the deposit is PENDING; the thank-you page polls every second, shows a "request sent, waiting for the provider" message after 30s, and moves on when the result arrives
+- feat: one idempotent order sync shared by the webhook, the thank-you page poll and a 5-minute reconciler, so late or lost webhooks no longer strand orders; webhooks that arrive before the order exists are kept and applied
 - fix: send the REST nonce when creating the checkout session so logged-in customers no longer get "Your cart session could not be read"
 - feat: MainMoney admin menu now has Reports, Transactions, Wallets and Settings sub-menus
 

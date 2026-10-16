@@ -26,6 +26,7 @@ declare global {
 
 const SELECTOR = ".mm-aggr-checkout";
 const MOUNTED = "data-mm-mounted";
+const FAILED = new Set(["FAILED", "CANCELLED", "CANCELED", "EXPIRED"]);
 
 /** Place the order once the widget reports a terminal SUCCESS; the server re-verifies the payment. */
 function placeOrder(): void {
@@ -70,14 +71,19 @@ async function mountOne(root: HTMLElement, plugin: PluginConfig): Promise<void> 
   mountCheckout(root, checkout, plugin.logoUrl !== undefined ? { logoUrl: plugin.logoUrl } : {});
   let submitted = false;
   checkout.subscribe((state) => {
-    if (submitted || state.step !== "terminal") {
+    if (submitted) {
       return;
     }
-    if ((state.status?.status ?? "").toUpperCase() === "SUCCESS") {
-      submitted = true;
-      root.dispatchEvent(new CustomEvent("mm-aggr:success", { bubbles: true }));
-      placeOrder();
+    const status = (state.status?.status ?? "").toUpperCase();
+    // As soon as the deposit exists (PENDING or already SUCCESS) the order is placed on hold; the thank-you
+    // page then waits for the provider. A failed deposit never places an order.
+    const accepted = state.step === "polling" || state.step === "ongoing" || (state.step === "terminal" && status === "SUCCESS");
+    if (!accepted || FAILED.has(status)) {
+      return;
     }
+    submitted = true;
+    root.dispatchEvent(new CustomEvent("mm-aggr:success", { bubbles: true }));
+    placeOrder();
   });
 }
 
