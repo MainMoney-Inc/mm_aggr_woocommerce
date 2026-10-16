@@ -83,7 +83,11 @@ final class WC_Mm_Aggr_Rest
                 }
             }
             wc_get_logger()->warning(
-                'MainMoney session: cart empty, WooCommerce session cookie '.($hasCookie ? 'present' : 'missing'),
+                sprintf(
+                    'MainMoney session: cart empty, WooCommerce session cookie %s, user %s (a logged-in user without X-WP-Nonce is dropped by WordPress)',
+                    $hasCookie ? 'present' : 'missing',
+                    is_user_logged_in() ? 'logged in' : 'guest',
+                ),
                 ['source' => 'mm-aggr'],
             );
 

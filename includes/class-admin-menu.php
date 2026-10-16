@@ -10,11 +10,13 @@ use MainMoney\WooCommercePlugin\SettingsSanitizer;
 final class WC_Mm_Aggr_Admin_Menu
 {
     private const SLUG = 'mm-aggr';
+    private const SETTINGS_SLUG = 'mm-aggr-settings';
     private const OPTION = 'woocommerce_mm_aggr_settings';
 
     public static function register(): void
     {
         add_action('admin_menu', [self::class, 'menu']);
+        add_action('admin_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_action('admin_post_mm_aggr_save', [self::class, 'save']);
         add_action('admin_post_mm_aggr_test', [self::class, 'testConnection']);
         add_filter('plugin_action_links_'.plugin_basename(WC_MM_AGGR_FILE), [self::class, 'actionLinks']);
@@ -22,7 +24,7 @@ final class WC_Mm_Aggr_Admin_Menu
 
     public static function url(): string
     {
-        return admin_url('admin.php?page='.self::SLUG);
+        return admin_url('admin.php?page='.self::SETTINGS_SLUG);
     }
 
     public static function menu(): void
@@ -32,10 +34,31 @@ final class WC_Mm_Aggr_Admin_Menu
             __('MainMoney', 'woocommerce-mm-aggr'),
             'manage_woocommerce',
             self::SLUG,
-            [self::class, 'render'],
+            [WC_Mm_Aggr_Admin_Reports::class, 'render'],
             'dashicons-money-alt',
             56,
         );
+        $pages = [
+            [__('Reports', 'woocommerce-mm-aggr'), self::SLUG, [WC_Mm_Aggr_Admin_Reports::class, 'render']],
+            [__('Transactions', 'woocommerce-mm-aggr'), 'mm-aggr-transactions', [WC_Mm_Aggr_Admin_Transactions::class, 'render']],
+            [__('Wallets', 'woocommerce-mm-aggr'), 'mm-aggr-wallets', [WC_Mm_Aggr_Admin_Wallets::class, 'render']],
+            [__('Settings', 'woocommerce-mm-aggr'), self::SETTINGS_SLUG, [self::class, 'render']],
+        ];
+        foreach ($pages as [$title, $slug, $callback]) {
+            add_submenu_page(self::SLUG, $title, $title, 'manage_woocommerce', $slug, $callback);
+        }
+    }
+
+    public static function enqueueAssets(string $hook): void
+    {
+        if (!str_contains($hook, 'mm-aggr')) {
+            return;
+        }
+        wp_enqueue_style('mm-aggr-admin', WC_MM_AGGR_URL.'assets/css/admin.css', [], WC_MM_AGGR_VERSION);
+        if (str_contains($hook, 'toplevel_page_mm-aggr') || str_ends_with($hook, '_page_mm-aggr')) {
+            wp_enqueue_script('chart-js', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js', [], '4.4.1', true);
+            wp_enqueue_script('mm-aggr-admin-reports', WC_MM_AGGR_URL.'assets/js/admin-reports.js', ['chart-js'], WC_MM_AGGR_VERSION, true);
+        }
     }
 
     /**
@@ -99,7 +122,7 @@ final class WC_Mm_Aggr_Admin_Menu
             'test_failed' => [__('Connection failed. Check Client ID, API secret and test mode (details in WooCommerce > Status > Logs, source mm-aggr).', 'woocommerce-mm-aggr'), 'error'],
             'test_missing' => [__('Save the Client ID and API secret first.', 'woocommerce-mm-aggr'), 'warning'],
         ];
-        echo '<div class="wrap"><h1>'.esc_html__('MainMoney', 'woocommerce-mm-aggr').'</h1>';
+        echo '<div class="wrap"><h1>'.esc_html__('MainMoney Settings', 'woocommerce-mm-aggr').'</h1>';
         if (isset($messages[$notice])) {
             printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($messages[$notice][1]), esc_html($messages[$notice][0]));
         }

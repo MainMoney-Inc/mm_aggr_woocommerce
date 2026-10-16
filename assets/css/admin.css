@@ -1,0 +1,35 @@
+.mm-aggr-admin .mm-aggr-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+  margin: 1rem 0 1.5rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #c3c4c7;
+  border-radius: 4px;
+}
+
+.mm-aggr-admin .mm-aggr-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+.mm-aggr-admin .mm-aggr-filters input,
+.mm-aggr-admin .mm-aggr-filters select {
+  min-width: 8rem;
+}
+
+.mm-aggr-admin .mm-aggr-table {
+  margin-top: 0.5rem;
+}
+
+.mm-aggr-admin #mm-aggr-volume-chart {
+  max-width: 100%;
+  background: #fff;
+  border: 1px solid #c3c4c7;
+  border-radius: 4px;
+  padding: 1rem;
+}

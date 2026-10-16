@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- fix: send the REST nonce when creating the checkout session so logged-in customers no longer get "Your cart session could not be read"
+- feat: MainMoney admin menu now has Reports, Transactions, Wallets and Settings sub-menus
+
 ## 0.1.4 (2026-10-16)
 
 - feat: MainMoney square icon in Payments settings and checkout

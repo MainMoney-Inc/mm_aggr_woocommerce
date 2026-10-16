@@ -22,6 +22,7 @@ final class WC_Mm_Aggr_Assets
         wp_enqueue_script('wc-mm-aggr-checkout', WC_MM_AGGR_URL.'assets/js/checkout.js', [], WC_MM_AGGR_VERSION, true);
         $config = [
             'sessionUrl' => rest_url('wc-mm-aggr/v1/session'),
+            'nonce' => wp_create_nonce('wp_rest'),
             'logoUrl' => WC_MM_AGGR_URL.'assets/js/main_money_square.png',
         ];
         wp_add_inline_script(

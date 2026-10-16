@@ -1592,7 +1592,11 @@
     const response = await fetch(plugin.sessionUrl, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      // Without the REST nonce WordPress drops the logged-in user, and WooCommerce then loses the cart session.
+      headers: {
+        "Content-Type": "application/json",
+        ...plugin.nonce ? { "X-WP-Nonce": plugin.nonce } : {}
+      },
       body: "{}"
     });
     const cfg = await response.json();
