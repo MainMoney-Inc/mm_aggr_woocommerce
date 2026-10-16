@@ -5,9 +5,16 @@
     return;
   }
   var createElement = element.createElement;
+  var settings = (window.wc && window.wc.wcSettings && window.wc.wcSettings.getSetting("mm_aggr_data", {})) || {};
+  var label = createElement(
+    "span",
+    { style: { display: "inline-flex", alignItems: "center", gap: "8px" } },
+    settings.icon ? createElement("img", { src: settings.icon, alt: "MainMoney", style: { height: "24px", width: "24px" } }) : null,
+    settings.title || "MainMoney"
+  );
   registry.registerPaymentMethod({
     name: "mm_aggr",
-    label: "MainMoney",
+    label: label,
     ariaLabel: "MainMoney",
     canMakePayment: function () {
       return true;

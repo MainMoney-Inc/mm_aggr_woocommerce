@@ -46,6 +46,7 @@ final class WC_Mm_Aggr_Blocks_Payment_Method extends AbstractPaymentMethodType
         return [
             'title' => $this->settings['title'] ?? 'MainMoney',
             'supports' => ['products', 'refunds'],
+            'icon' => WC_MM_AGGR_URL.'assets/js/main_money_square.png',
         ];
     }
 }

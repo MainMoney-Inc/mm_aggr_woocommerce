@@ -14,6 +14,7 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
         $this->id = 'mm_aggr';
         $this->method_title = __('MainMoney', 'woocommerce-mm-aggr');
         $this->method_description = __('MainMoney aggregator payments', 'woocommerce-mm-aggr');
+        $this->icon = WC_MM_AGGR_URL.'assets/js/main_money_square.png';
         $this->has_fields = true;
         $this->supports = [
             'products',
