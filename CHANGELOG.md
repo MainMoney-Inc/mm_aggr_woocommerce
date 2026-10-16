@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3 (2026-10-16)
+
+- fix: read the cart from the session in the REST session endpoint; add MainMoney admin menu and release script
+- fix: verify payments before completing orders, mount widget in classic and Blocks checkout, add zip build
+
 ## 0.1.2
 
 - Orders are only placed after the deposit exists; unpaid/failed deposits are refused with a checkout notice.
