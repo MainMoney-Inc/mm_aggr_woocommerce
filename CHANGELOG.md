@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 (2026-10-16)
+
+- feat: MainMoney square icon in Payments settings and checkout
+
 ## 0.1.3 (2026-10-16)
 
 - fix: read the cart from the session in the REST session endpoint; add MainMoney admin menu and release script
