@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5 (2026-10-16)
+
+- ci: add Dependabot and CodeQL
+- fix: send REST nonce for the checkout session; feat: Reports, Transactions, Wallets and Settings sub-menus
+
 ## Unreleased
 
 - fix: send the REST nonce when creating the checkout session so logged-in customers no longer get "Your cart session could not be read"
