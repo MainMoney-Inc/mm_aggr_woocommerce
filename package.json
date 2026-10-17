@@ -10,7 +10,7 @@
     "zip:dry": "bash scripts/release.sh --dry-run"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.0"
   }
 }
