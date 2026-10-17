@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6 (2026-10-17)
+
+- Added checkout caches and others
+- feat: handle delayed payment confirmations with an on-hold order, thank-you page polling and a reconciler
+
 ## 0.1.5 (2026-10-16)
 
 - ci: add Dependabot and CodeQL
