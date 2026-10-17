@@ -181,7 +181,12 @@
     help: "Help Center",
     cardSoon: "Card payments are coming soon.",
     mainmoneySoon: "Pay by scanning a QR code with the MainMoney app. Coming soon.",
-    noProviders: "No mobile money provider is available for this country."
+    noProviders: "No mobile money provider is available for this country.",
+    noQuote: "Conversion between {from} and {to} is not available. Please select {to}.",
+    payIn: "Pay in",
+    exchangeRate: "Exchange rate: 1 {from} = {rate} {to}",
+    retry: "Retry",
+    retryHint: "Your payment was not completed. Press Retry to start again."
   };
   var FR = {
     country: "Pays",
@@ -233,7 +238,12 @@
     help: "Centre d'aide",
     cardSoon: "Le paiement par carte sera bient\xF4t disponible.",
     mainmoneySoon: "Payez en scannant un code QR avec l'application MainMoney. Bient\xF4t disponible.",
-    noProviders: "Aucun op\xE9rateur mobile money n'est disponible pour ce pays."
+    noProviders: "Aucun op\xE9rateur mobile money n'est disponible pour ce pays.",
+    noQuote: "La conversion entre {from} et {to} n'est pas disponible. Veuillez s\xE9lectionner {to}.",
+    payIn: "Payer en",
+    exchangeRate: "Taux de change : 1 {from} = {rate} {to}",
+    retry: "R\xE9essayer",
+    retryHint: "Votre paiement n'a pas abouti. Appuyez sur R\xE9essayer pour recommencer."
   };
   var CATALOGS = { en: EN, fr: FR };
   function createTranslator(locale, overrides = {}) {
@@ -447,8 +457,9 @@
     const theme = { ...session.theme, ...options.theme };
     const emitter = new Emitter();
     const pollAbort = new AbortController();
-    const explicitCurrency = options.currency?.trim() ?? "";
-    const lockCurrency = options.lockCurrency === true || explicitCurrency !== "";
+    const explicitCurrency = options.currency?.trim().toUpperCase() ?? "";
+    const fixedCurrency = explicitCurrency !== "";
+    const lockCurrency = options.lockCurrency === true;
     const state = {
       step: "country",
       operation: options.operation,
@@ -460,18 +471,34 @@
       lockAmount: options.lockAmount === true,
       currency: explicitCurrency,
       lockCurrency,
-      availableCurrencies: explicitCurrency !== "" ? [explicitCurrency] : [],
+      currencyFixed: fixedCurrency,
+      payCurrency: explicitCurrency,
+      availableCurrencies: fixedCurrency ? [explicitCurrency] : [],
+      quoteUnavailable: false,
       partnerFee: null,
       locale: options.locale ?? session.locale,
       paymentMethods: ["mobile_money"],
       activeMethod: "mobile_money",
       feeBearer: "MERCHANT",
-      customerEmail: "",
+      customerEmail: options.customerEmail?.trim() ?? "",
       canPay: false,
       slow: false,
       theme
     };
     let lastMatchedIdentifier = "";
+    let submissions = 0;
+    let baseReference;
+    const providerCache = /* @__PURE__ */ new Map();
+    const cachedProviders = (country) => {
+      const key = `${country}:${routingOperationType()}`;
+      let pending = providerCache.get(key);
+      if (pending === void 0) {
+        pending = http.get(session.paths.providers, { country, operation_type: routingOperationType() });
+        providerCache.set(key, pending);
+        pending.catch(() => providerCache.delete(key));
+      }
+      return pending;
+    };
     let returnStep = "overview";
     const notify = () => {
       emitter.emit("change", getState());
@@ -485,7 +512,7 @@
     };
     const computeCanPay = () => {
       const amount = Number(state.amount);
-      return state.step === "details" && state.activeMethod === "mobile_money" && state.selectedCountry !== void 0 && state.providers.length > 0 && state.currency !== "" && Number.isFinite(amount) && amount > 0 && hasValidLocalNumber();
+      return state.step === "details" && state.activeMethod === "mobile_money" && state.selectedCountry !== void 0 && state.providers.length > 0 && state.currency !== "" && !state.quoteUnavailable && Number.isFinite(amount) && amount > 0 && hasValidLocalNumber();
     };
     const messageFromError = (error) => {
       if (error instanceof Error && error.message !== "") {
@@ -509,17 +536,38 @@
       }
       return [];
     };
+    const defaultPayCurrency = (accepted) => {
+      if (accepted.length === 0 || accepted.includes(state.currency)) {
+        return state.currency;
+      }
+      return accepted[0];
+    };
     const applyProviderCurrency = (provider) => {
       if (state.lockCurrency) {
         return;
       }
       const accepted = providerAcceptedCurrencies(provider);
       state.availableCurrencies = accepted;
+      state.quoteUnavailable = false;
+      if (fixedCurrency) {
+        state.payCurrency = defaultPayCurrency(accepted);
+        return;
+      }
       if (accepted.includes(provider.currency_code)) {
         state.currency = provider.currency_code;
       } else if (accepted.length > 0) {
         state.currency = accepted[0];
       }
+      state.payCurrency = state.currency;
+    };
+    const isNoQuote = (error) => {
+      if (!(error instanceof MerchantBackendException)) {
+        return false;
+      }
+      if (error.errors.payment_currency !== void 0) {
+        return true;
+      }
+      return JSON.stringify(error.responseBody ?? "").includes("no_quote");
     };
     const PAYMENT_METHODS = ["mobile_money", "card", "mainmoney"];
     const applyPaymentPreferences = (prefs) => {
@@ -534,17 +582,30 @@
         state.feeBearer = prefs.fee_bearer;
       }
     };
+    const allowedCountries = (countries) => {
+      const seen = /* @__PURE__ */ new Set();
+      return countries.filter((country) => {
+        if (typeof country.code !== "string" || country.code === "" || seen.has(country.code)) {
+          return false;
+        }
+        seen.add(country.code);
+        return true;
+      });
+    };
     const loadCountries = async () => {
+      const countriesRequest = http.get(session.paths.countries);
+      const preferences = http.get(session.paths.checkoutPreferences).catch(() => void 0);
       try {
-        const payload = await http.get(session.paths.countries);
-        state.countries = paginated(payload);
+        const payload = await countriesRequest;
+        state.countries = allowedCountries(paginated(payload));
         state.error = void 0;
       } catch (error) {
+        void preferences;
         fail(error);
         return;
       }
-      try {
-        const prefs = await http.get(session.paths.checkoutPreferences);
+      const prefs = await preferences;
+      if (prefs !== void 0) {
         applyPaymentPreferences(prefs);
         if (prefs.primary_color !== void 0) {
           state.theme = {
@@ -554,7 +615,6 @@
             background: String(prefs.background_color ?? state.theme.background)
           };
         }
-      } catch {
       }
       notify();
     };
@@ -565,21 +625,20 @@
         return;
       }
       try {
-        const payload = await http.get(session.paths.providers, {
-          country: code,
-          operation_type: routingOperationType()
-        });
+        const payload = await cachedProviders(code);
         state.selectedCountry = country;
         state.selectedProvider = void 0;
         state.highlightedProviderCode = void 0;
         state.customerName = null;
         lastMatchedIdentifier = "";
         state.providers = paginated(payload);
+        state.quoteUnavailable = false;
         if (!state.lockCurrency) {
           state.availableCurrencies = unionProviderCurrencies(state.providers);
           if (state.currency === "" && state.availableCurrencies.length > 0) {
             state.currency = state.availableCurrencies[0];
           }
+          state.payCurrency = fixedCurrency ? defaultPayCurrency(state.availableCurrencies) : state.currency;
         }
         state.error = void 0;
         state.step = "details";
@@ -671,7 +730,12 @@
         return;
       }
       try {
-        state.currency = normalized;
+        if (fixedCurrency) {
+          state.payCurrency = normalized;
+        } else {
+          state.currency = normalized;
+          state.payCurrency = normalized;
+        }
         await refreshLimitsAndFees();
         notify();
       } catch (error) {
@@ -690,39 +754,66 @@
         fail(error);
       }
     };
-    const refreshLimitsAndFees = async () => {
-      if (state.selectedProvider === void 0 || state.amount.trim() === "" || state.currency === "") {
-        return;
-      }
-      const operation = routingOperationType();
-      const limitsPayload = await http.get(session.paths.amountLimits, {
-        financial_entity_code: state.selectedProvider.code,
-        currency: state.currency,
-        operation_type: operation
-      });
-      const limits = paginated(limitsPayload);
-      state.limits = limits[0];
-      if (state.limits !== void 0) {
-        const amount = Number(state.amount);
-        const min = state.limits.amount_min === null ? void 0 : Number(state.limits.amount_min);
-        const max = state.limits.amount_max === null ? void 0 : Number(state.limits.amount_max);
-        if (min !== void 0 && amount < min || max !== void 0 && amount > max) {
-          state.error = t("limits", {
-            min: state.limits.amount_min ?? "",
-            max: state.limits.amount_max ?? ""
-          });
-        } else {
-          state.error = void 0;
-        }
-      }
+    const feeSimulation = async (payCurrency) => {
       const fees = merchantFees();
-      state.fees = await http.post(session.paths.feesSimulate, {
-        provider_code: state.selectedProvider.code,
-        operation_type: operation,
+      return http.post(session.paths.feesSimulate, {
+        provider_code: state.selectedProvider?.code ?? "",
+        operation_type: routingOperationType(),
         amount: state.amount,
         currency: state.currency,
+        ...payCurrency !== state.currency ? { payment_currency: payCurrency } : {},
         ...fees !== "" ? { fees } : {}
       });
+    };
+    const loadLimits = async (provider) => {
+      const payload = await http.get(session.paths.amountLimits, {
+        financial_entity_code: provider.code,
+        currency: state.payCurrency !== "" ? state.payCurrency : state.currency,
+        operation_type: routingOperationType()
+      });
+      state.limits = paginated(payload)[0];
+    };
+    const limitsError = (simulation) => {
+      if (state.limits === void 0) {
+        return void 0;
+      }
+      const amount = Number(simulation?.quote?.converted_amount ?? state.amount);
+      const min = state.limits.amount_min === null ? void 0 : Number(state.limits.amount_min);
+      const max = state.limits.amount_max === null ? void 0 : Number(state.limits.amount_max);
+      if (min !== void 0 && amount < min || max !== void 0 && amount > max) {
+        return t("limits", { min: state.limits.amount_min ?? "", max: state.limits.amount_max ?? "" });
+      }
+      return void 0;
+    };
+    const refreshLimitsAndFees = async () => {
+      const provider = state.selectedProvider;
+      if (provider === void 0 || state.amount.trim() === "" || state.currency === "") {
+        return;
+      }
+      const payCurrency = state.payCurrency !== "" ? state.payCurrency : state.currency;
+      state.quoteUnavailable = false;
+      await loadLimits(provider);
+      let notice;
+      let simulation;
+      try {
+        simulation = await feeSimulation(payCurrency);
+      } catch (error) {
+        if (!isNoQuote(error) || payCurrency === state.currency) {
+          throw error;
+        }
+        notice = t("noQuote", { from: payCurrency, to: state.currency });
+        state.fees = void 0;
+        if (!providerAcceptedCurrencies(provider).includes(state.currency)) {
+          state.quoteUnavailable = true;
+          state.error = notice;
+          return;
+        }
+        state.payCurrency = state.currency;
+        await loadLimits(provider);
+        simulation = await feeSimulation(state.currency);
+      }
+      state.fees = simulation;
+      state.error = limitsError(simulation) ?? notice;
     };
     const prepare = async () => {
       if (state.selectedCountry === void 0 || state.selectedProvider === void 0) {
@@ -799,7 +890,9 @@
       state.error = void 0;
       notify();
       try {
-        const reference = options.reference ?? crypto.randomUUID();
+        baseReference ??= options.reference ?? crypto.randomUUID();
+        const reference = submissions === 0 ? baseReference : `${baseReference}-r${submissions}`;
+        submissions += 1;
         let created;
         if (state.operation === "deposit") {
           const payload = {
@@ -809,6 +902,9 @@
             currency: state.currency,
             customer_phone: e164OrIdentifier()
           };
+          if (state.payCurrency !== "" && state.payCurrency !== state.currency) {
+            payload.payment_currency = state.payCurrency;
+          }
           if (state.customerName !== null) {
             payload.customer_name = state.customerName;
           }
@@ -875,9 +971,19 @@
           emitter.emit("status", status);
         }
       } catch (error) {
-        state.step = returnStep;
+        state.step = options.onRetry !== void 0 ? "error" : returnStep;
         fail(error);
       }
+    };
+    const retry = async () => {
+      if (options.onRetry !== void 0) {
+        await options.onRetry();
+        return;
+      }
+      state.error = void 0;
+      state.status = void 0;
+      state.step = returnStep;
+      notify();
     };
     const merchantFees = () => {
       if (state.operation !== "deposit") {
@@ -908,6 +1014,7 @@
       setLocale,
       matchProvider,
       setCurrency,
+      retry,
       setAmount,
       goOverview,
       goBack,
@@ -1046,6 +1153,9 @@
     if (!state.lockAmount || state.amount === "") {
       pane.append(amountField(checkout, state));
     }
+    if (payCurrencyOptions(state).length > 1) {
+      pane.append(payCurrencyField(checkout, state));
+    }
     pane.append(feeBox(checkout, state));
     pane.append(providerLogos(checkout, state));
     appendError(pane, state);
@@ -1151,7 +1261,7 @@
       void checkout.setAmount(input.value).catch(() => void 0);
     });
     row.append(input);
-    if (state.lockCurrency || state.availableCurrencies.length <= 1) {
+    if (state.lockCurrency || state.currencyFixed || state.availableCurrencies.length <= 1) {
       const badge = document.createElement("span");
       badge.className = "mm-currency-suffix";
       badge.textContent = state.currency;
@@ -1173,15 +1283,44 @@
     }
     return floatingField(checkout.t("amount"), row);
   }
+  function payCurrencyOptions(state) {
+    if (!state.currencyFixed || state.lockCurrency || state.selectedProvider === void 0) {
+      return [];
+    }
+    return [...new Set(state.availableCurrencies)].sort();
+  }
+  function payCurrencyField(checkout, state) {
+    const select = document.createElement("select");
+    select.className = "mm-input mm-input-bare mm-select";
+    for (const code of payCurrencyOptions(state)) {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = code;
+      option.selected = state.payCurrency === code;
+      select.append(option);
+    }
+    select.addEventListener("change", () => {
+      void checkout.setCurrency(select.value).catch(() => void 0);
+    });
+    return floatingField(checkout.t("payIn"), select);
+  }
   function feeBox(checkout, state) {
     const box = document.createElement("div");
     box.className = "mm-fee-box";
     const q = quote(state);
-    box.append(feeRow(checkout.t("merchantReceives"), formatMoney(q.receives, state)));
-    box.append(feeRow(checkout.t("processingFee"), formatMoney(q.fee, state)));
-    const total = feeRow(checkout.t("youPay"), formatMoney(q.pay, state));
+    const currency = state.fees?.quote?.to_currency ?? state.currency;
+    box.append(feeRow(checkout.t("merchantReceives"), formatMoney(q.receives, state, currency)));
+    box.append(feeRow(checkout.t("processingFee"), formatMoney(q.fee, state, currency)));
+    const total = feeRow(checkout.t("youPay"), formatMoney(q.pay, state, currency));
     total.classList.add("mm-fee-total");
     box.append(total);
+    const fx = state.fees?.quote;
+    if (fx !== void 0) {
+      const note = document.createElement("p");
+      note.className = "mm-hint";
+      note.textContent = checkout.t("exchangeRate", { from: fx.from_currency, to: fx.to_currency, rate: fx.rate });
+      box.append(note);
+    }
     return box;
   }
   function feeRow(labelText, value) {
@@ -1246,7 +1385,7 @@
   function applyPayState(button, checkout, state) {
     const ready = state.canPay;
     button.disabled = !ready;
-    const total = ready ? formatMoney(quote(state).pay, state) : "\u2014";
+    const total = ready ? formatMoney(quote(state).pay, state, state.fees?.quote?.to_currency ?? state.currency) : "\u2014";
     button.textContent = `${checkout.t("pay")} ${total}`;
   }
   function refreshPayButton(checkout, from) {
@@ -1264,8 +1403,8 @@
       pay: fees?.total_to_pay ?? amount
     };
   }
-  function formatMoney(value, state) {
-    if (value === null || value === "" || state.currency === "") {
+  function formatMoney(value, state, currency = state.currency) {
+    if (value === null || value === "" || currency === "") {
       return "\u2014";
     }
     const number = Number(value);
@@ -1273,9 +1412,9 @@
       return "\u2014";
     }
     try {
-      return new Intl.NumberFormat(state.locale, { style: "currency", currency: state.currency }).format(number);
+      return new Intl.NumberFormat(state.locale, { style: "currency", currency }).format(number);
     } catch {
-      return `${number.toFixed(2)} ${state.currency}`;
+      return `${number.toFixed(2)} ${currency}`;
     }
   }
   function flagNode(country) {
@@ -1323,9 +1462,11 @@
         body = confirmingStep(checkout, state, logoUrl);
       } else if (state.step === "ongoing") {
         body = messageStep(checkout.t("ongoing"));
+      } else if (state.step === "error") {
+        body = retryStep(checkout, state.error ?? checkout.t("failed"));
       } else if (state.step === "terminal") {
         const status = state.status?.status ?? "";
-        body = messageStep(status.toUpperCase() === "SUCCESS" ? checkout.t("success") : checkout.t("failed"));
+        body = status.toUpperCase() === "SUCCESS" ? messageStep(checkout.t("success")) : retryStep(checkout, checkout.t("failed"));
       } else {
         body = formBody(checkout, state);
       }
@@ -1351,9 +1492,14 @@
         element.append(confirmingStep(checkout, state, logoUrl));
       } else if (state.step === "ongoing") {
         element.append(messageStep(checkout.t("ongoing")));
+      } else if (state.step === "error") {
+        element.append(retryStep(checkout, state.error ?? checkout.t("failed")));
+        return;
       } else {
         const status = state.status?.status ?? "";
-        element.append(messageStep(status.toUpperCase() === "SUCCESS" ? checkout.t("success") : checkout.t("failed")));
+        element.append(
+          status.toUpperCase() === "SUCCESS" ? messageStep(checkout.t("success")) : retryStep(checkout, checkout.t("failed"))
+        );
       }
       appendError2(element, state);
     };
@@ -1443,6 +1589,29 @@
       notice.textContent = checkout.t("slow");
       wrap.append(notice);
     }
+    return wrap;
+  }
+  function retryStep(checkout, message) {
+    const wrap = document.createElement("div");
+    wrap.className = "mm-confirm mm-retry";
+    const error = document.createElement("div");
+    error.className = "mm-error";
+    error.setAttribute("role", "alert");
+    error.textContent = message;
+    const hint = document.createElement("p");
+    hint.className = "mm-hint";
+    hint.textContent = checkout.t("retryHint");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mm-pay";
+    button.textContent = checkout.t("retry");
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      void checkout.retry().catch(() => {
+        button.disabled = false;
+      });
+    });
+    wrap.append(error, hint, button);
     return wrap;
   }
   function messageStep(text) {
@@ -1610,6 +1779,14 @@
     }
     document.querySelector(".wc-block-components-checkout-place-order-button")?.click();
   }
+  function checkoutEmail() {
+    const classic = document.querySelector("#billing_email, input[name='billing_email']");
+    if (classic !== null && classic.value.trim() !== "") {
+      return classic.value.trim();
+    }
+    const store = window.wp?.data?.select?.("wc/store/cart");
+    return store?.getCustomerData?.().billingAddress?.email?.trim() ?? "";
+  }
   async function mountOne(root, plugin) {
     const response = await fetch(plugin.sessionUrl, {
       method: "POST",
@@ -1631,16 +1808,26 @@
       clientToken: cfg.clientToken,
       locale: cfg.locale ?? "en"
     });
+    let unmount = () => void 0;
     const checkout = createCheckout(session, {
       operation: "deposit",
       pollUrl: cfg.pollUrl,
       pollHeaders: cfg.pollHeaders,
       amount: cfg.amount ?? void 0,
       lockAmount: cfg.lockAmount === true,
-      reference: cfg.reference
+      reference: cfg.reference,
+      currency: cfg.currency ?? void 0,
+      customerEmail: checkoutEmail() || cfg.customerEmail || void 0,
+      // A failed deposit keeps its reference for good: Retry asks the server for a brand new session.
+      onRetry: async () => {
+        checkout.close();
+        unmount();
+        root.innerHTML = "";
+        await mountOne(root, plugin);
+      }
     });
+    unmount = mountCheckout(root, checkout, plugin.logoUrl !== void 0 ? { logoUrl: plugin.logoUrl } : {});
     await checkout.loadCountries();
-    mountCheckout(root, checkout, plugin.logoUrl !== void 0 ? { logoUrl: plugin.logoUrl } : {});
     let submitted = false;
     checkout.subscribe((state) => {
       if (submitted) {

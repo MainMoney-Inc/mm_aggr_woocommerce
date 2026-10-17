@@ -16,11 +16,15 @@ type CheckoutBootConfig = {
   amount?: string | null;
   lockAmount?: boolean;
   reference?: string;
+  /** Cart currency: the order's currency, which the widget never changes. */
+  currency?: string | null;
+  customerEmail?: string | null;
 };
 
 declare global {
   interface Window {
     mmAggrConfig?: PluginConfig;
+    wp?: { data?: { select?: (store: string) => unknown } };
   }
 }
 
@@ -36,6 +40,18 @@ function placeOrder(): void {
     return;
   }
   document.querySelector<HTMLElement>(".wc-block-components-checkout-place-order-button")?.click();
+}
+
+/** Receipt address the customer already typed in the checkout (classic form or Blocks), if any. */
+function checkoutEmail(): string {
+  const classic = document.querySelector<HTMLInputElement>("#billing_email, input[name='billing_email']");
+  if (classic !== null && classic.value.trim() !== "") {
+    return classic.value.trim();
+  }
+  const store = window.wp?.data?.select?.("wc/store/cart") as
+    | { getCustomerData?: () => { billingAddress?: { email?: string } } }
+    | undefined;
+  return store?.getCustomerData?.().billingAddress?.email?.trim() ?? "";
 }
 
 async function mountOne(root: HTMLElement, plugin: PluginConfig): Promise<void> {
@@ -59,6 +75,7 @@ async function mountOne(root: HTMLElement, plugin: PluginConfig): Promise<void> 
     clientToken: cfg.clientToken,
     locale: cfg.locale ?? "en",
   });
+  let unmount: () => void = () => undefined;
   const checkout = createCheckout(session, {
     operation: "deposit",
     pollUrl: cfg.pollUrl,
@@ -66,9 +83,19 @@ async function mountOne(root: HTMLElement, plugin: PluginConfig): Promise<void> 
     amount: cfg.amount ?? undefined,
     lockAmount: cfg.lockAmount === true,
     reference: cfg.reference,
+    currency: cfg.currency ?? undefined,
+    customerEmail: checkoutEmail() || cfg.customerEmail || undefined,
+    // A failed deposit keeps its reference for good: Retry asks the server for a brand new session.
+    onRetry: async () => {
+      checkout.close();
+      unmount();
+      root.innerHTML = "";
+      await mountOne(root, plugin);
+    },
   });
+  // Mount first so the form shows while countries load.
+  unmount = mountCheckout(root, checkout, plugin.logoUrl !== undefined ? { logoUrl: plugin.logoUrl } : {});
   await checkout.loadCountries();
-  mountCheckout(root, checkout, plugin.logoUrl !== undefined ? { logoUrl: plugin.logoUrl } : {});
   let submitted = false;
   checkout.subscribe((state) => {
     if (submitted) {

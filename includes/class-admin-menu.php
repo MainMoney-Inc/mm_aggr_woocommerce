@@ -19,6 +19,7 @@ final class WC_Mm_Aggr_Admin_Menu
         add_action('admin_enqueue_scripts', [self::class, 'enqueueAssets']);
         add_action('admin_post_mm_aggr_save', [self::class, 'save']);
         add_action('admin_post_mm_aggr_test', [self::class, 'testConnection']);
+        add_action('admin_post_mm_aggr_clear_cache', [self::class, 'clearCache']);
         add_filter('plugin_action_links_'.plugin_basename(WC_MM_AGGR_FILE), [self::class, 'actionLinks']);
     }
 
@@ -80,6 +81,7 @@ final class WC_Mm_Aggr_Admin_Menu
         $input = wp_unslash($_POST['mm'] ?? []);
         $clean = SettingsSanitizer::sanitize(is_array($input) ? $input : [], is_array($existing) ? $existing : []);
         update_option(self::OPTION, array_merge(is_array($existing) ? $existing : [], $clean));
+        WC_Mm_Aggr_Cache_Store::flush();
         self::back('saved');
     }
 
@@ -107,6 +109,13 @@ final class WC_Mm_Aggr_Admin_Menu
         self::back('test_ok');
     }
 
+    public static function clearCache(): void
+    {
+        self::guard('mm_aggr_clear_cache');
+        WC_Mm_Aggr_Cache_Store::flush();
+        self::back('cache_cleared');
+    }
+
     public static function render(): void
     {
         if (!current_user_can('manage_woocommerce')) {
@@ -120,6 +129,7 @@ final class WC_Mm_Aggr_Admin_Menu
             'saved' => [__('Settings saved.', 'woocommerce-mm-aggr'), 'success'],
             'test_ok' => [__('Connection successful: the credentials are accepted.', 'woocommerce-mm-aggr'), 'success'],
             'test_failed' => [__('Connection failed. Check Client ID, API secret and test mode (details in WooCommerce > Status > Logs, source mm-aggr).', 'woocommerce-mm-aggr'), 'error'],
+            'cache_cleared' => [__('MainMoney cache cleared: countries, providers and limits will be fetched again.', 'woocommerce-mm-aggr'), 'success'],
             'test_missing' => [__('Save the Client ID and API secret first.', 'woocommerce-mm-aggr'), 'warning'],
         ];
         echo '<div class="wrap"><h1>'.esc_html__('MainMoney Settings', 'woocommerce-mm-aggr').'</h1>';
@@ -159,6 +169,12 @@ final class WC_Mm_Aggr_Admin_Menu
         echo '<input type="hidden" name="action" value="mm_aggr_test">';
         wp_nonce_field('mm_aggr_test');
         submit_button(__('Test connection', 'woocommerce-mm-aggr'), 'secondary', 'submit', false);
+        echo '</form>';
+        echo '<form method="post" action="'.esc_url(admin_url('admin-post.php')).'" style="margin-top:1em">';
+        echo '<input type="hidden" name="action" value="mm_aggr_clear_cache">';
+        wp_nonce_field('mm_aggr_clear_cache');
+        submit_button(__('Clear cache', 'woocommerce-mm-aggr'), 'secondary', 'submit', false);
+        echo '<p class="description">'.esc_html__('Countries, providers and checkout preferences are cached for up to 24 hours and refreshed when settings are saved.', 'woocommerce-mm-aggr').'</p>';
         echo ' <a class="button" href="'.esc_url(admin_url('admin.php?page=wc-status&tab=logs')).'">'.esc_html__('View logs', 'woocommerce-mm-aggr').'</a>';
         echo '</form></div>';
     }

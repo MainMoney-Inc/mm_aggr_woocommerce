@@ -30,6 +30,7 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
             esc_url(admin_url('admin.php?page=mm-aggr')),
         );
         add_action('woocommerce_update_options_payment_gateways_'.$this->id, [$this, 'process_admin_options']);
+        add_action('woocommerce_update_options_payment_gateways_'.$this->id, [WC_Mm_Aggr_Cache_Store::class, 'flush']);
     }
 
     public function init_form_fields(): void

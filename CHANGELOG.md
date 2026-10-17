@@ -7,6 +7,11 @@
 
 ## Unreleased
 
+- fix: the checkout no longer changes the cart currency. The order stays in the cart currency; when the provider accepts several currencies the customer picks the currency to pay in, with an automatic conversion quote. Without a quote the widget says conversion is not available and asks to select the cart currency
+- fix: "Idempotency-Key was already used with a different request body". The key now follows the checkout session (a refreshed page or a retry starts a new session with a new reference), and a failed payment shows only the error and a Retry button
+- fix: countries are restricted to those allowed for the merchant (also when a phone number matches a provider)
+- feat: countries, providers, limits and checkout preferences are cached (24h; match-provider 10 min, never with account-holder lookups) and renewed when settings are saved or from the new "Clear cache" button
+- feat: the receipt email is pre-filled from the billing or account email and can be changed
 - feat: slow provider confirmations. The order is placed **On hold** as soon as the deposit is PENDING; the thank-you page polls every second, shows a "request sent, waiting for the provider" message after 30s, and moves on when the result arrives
 - feat: one idempotent order sync shared by the webhook, the thank-you page poll and a 5-minute reconciler, so late or lost webhooks no longer strand orders; webhooks that arrive before the order exists are kept and applied
 - fix: send the REST nonce when creating the checkout session so logged-in customers no longer get "Your cart session could not be read"

@@ -43,14 +43,16 @@ final class PaymentVerifier
      */
     public static function matches(array $payload, string $orderTotal, string $orderCurrency): bool
     {
-        $amount = $payload['amount'] ?? null;
+        // A deposit paid in another currency reports the charged amount; the order's own amount and
+        // currency travel as original_amount / original_currency.
+        $amount = $payload['original_amount'] ?? $payload['amount'] ?? null;
         if (!is_numeric($amount) || !is_numeric($orderTotal)) {
             return false;
         }
         if (abs((float) $amount - (float) $orderTotal) >= 0.005) {
             return false;
         }
-        $currency = $payload['currency'] ?? null;
+        $currency = $payload['original_currency'] ?? $payload['currency'] ?? null;
         if (is_string($currency) && $currency !== '' && strtoupper($currency) !== strtoupper($orderCurrency)) {
             return false;
         }

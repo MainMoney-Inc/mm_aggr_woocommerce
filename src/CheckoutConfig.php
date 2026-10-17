@@ -9,7 +9,7 @@ final class CheckoutConfig
     /**
      * @return array<string, mixed>
      */
-    public static function forSession(string $merchantBackendUrl, string $pollUrl, CheckoutSession $session, string $locale = 'en'): array
+    public static function forSession(string $merchantBackendUrl, string $pollUrl, CheckoutSession $session, string $locale = 'en', string $customerEmail = ''): array
     {
         return [
             'merchantBackendUrl' => $merchantBackendUrl,
@@ -22,6 +22,8 @@ final class CheckoutConfig
             'amount' => $session->amount,
             'lockAmount' => $session->lockAmount,
             'reference' => $session->reference,
+            'currency' => $session->currency,
+            'customerEmail' => $customerEmail !== '' ? $customerEmail : null,
         ];
     }
 }

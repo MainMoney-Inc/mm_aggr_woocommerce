@@ -7,6 +7,7 @@ final class WC_Mm_Aggr_Plugin
     public static function boot(): void
     {
         require_once WC_MM_AGGR_DIR.'includes/class-session-store.php';
+        require_once WC_MM_AGGR_DIR.'includes/class-cache-store.php';
         require_once WC_MM_AGGR_DIR.'includes/class-settings.php';
         require_once WC_MM_AGGR_DIR.'includes/class-order-sync.php';
         require_once WC_MM_AGGR_DIR.'includes/class-pending-orders.php';

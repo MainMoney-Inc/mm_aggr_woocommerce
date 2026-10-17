@@ -6,9 +6,12 @@ namespace MainMoney\WooCommercePlugin\Tests;
 
 use MainMoney\Aggregator\Http\HttpResponse;
 use MainMoney\WooCommercePlugin\CheckoutSession;
+use MainMoney\WooCommercePlugin\CheckoutConfig;
 use MainMoney\WooCommercePlugin\ClientFactory;
+use MainMoney\WooCommercePlugin\InMemoryCacheStore;
 use MainMoney\WooCommercePlugin\OrderStatusMapper;
 use MainMoney\WooCommercePlugin\PaymentVerifier;
+use MainMoney\WooCommercePlugin\ProxyCache;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\RefundService;
 use MainMoney\WooCommercePlugin\Settings;
@@ -75,6 +78,19 @@ final class GatewayServicesTest extends TestCase
         self::assertSame(PaymentVerifier::UNKNOWN, PaymentVerifier::evaluate([], '40.00', 'USD'));
     }
 
+    public function testPaymentVerifierComparesTheOrderAmountOfAConvertedDeposit(): void
+    {
+        $converted = [
+            'status' => 'SUCCESS',
+            'amount' => '30000.00',
+            'currency' => 'CDF',
+            'original_amount' => '10.00',
+            'original_currency' => 'EUR',
+        ];
+        self::assertSame(PaymentVerifier::PAID, PaymentVerifier::evaluate($converted, '10.00', 'EUR'));
+        self::assertSame(PaymentVerifier::MISMATCH, PaymentVerifier::evaluate($converted, '30000.00', 'CDF'));
+    }
+
     public function testDepositStatusIsCheckedByReference(): void
     {
         $mock = new MockHttpClient();
@@ -96,6 +112,94 @@ final class GatewayServicesTest extends TestCase
         (new ProxyService($client))->handle('POST', 'deposits', [], ['fees' => '0', 'fee_bearer' => 'customer'], $session);
         self::assertArrayNotHasKey('fees', $mock->history[1]['options']['json']);
         self::assertArrayNotHasKey('fee_bearer', $mock->history[1]['options']['json']);
+    }
+
+    public function testIdempotencyKeyFollowsTheSessionNotTheReference(): void
+    {
+        $first = new CheckoutSession('tok-a', 'WC-1', '40.00', 'USD', true, time() + 60);
+        $second = new CheckoutSession('tok-b', 'WC-1', '40.00', 'USD', true, time() + 60);
+        self::assertSame(ProxyService::idempotencyKey($first), ProxyService::idempotencyKey($first));
+        self::assertNotSame(ProxyService::idempotencyKey($first), ProxyService::idempotencyKey($second));
+        self::assertNotSame($first->reference, ProxyService::idempotencyKey($first));
+
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']));
+        (new ProxyService($client))->handle('POST', 'deposits', [], ['customer_phone' => '243820000000'], $first);
+        self::assertSame(
+            ProxyService::idempotencyKey($first),
+            $mock->history[1]['options']['headers']['Idempotency-Key'] ?? null,
+        );
+    }
+
+    public function testCartCurrencyIsPinnedButPaymentCurrencyPasses(): void
+    {
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']));
+        $session = new CheckoutSession('tok', 'WC-3', '40.00', 'EUR', true, time() + 60);
+        (new ProxyService($client))->handle('POST', 'deposits', [], ['currency' => 'CDF', 'payment_currency' => 'CDF'], $session);
+        self::assertSame('EUR', $mock->history[1]['options']['json']['currency'] ?? null);
+        self::assertSame('CDF', $mock->history[1]['options']['json']['payment_currency'] ?? null);
+    }
+
+    public function testStaticLookupsAreCachedUntilTheVersionChanges(): void
+    {
+        $store = new InMemoryCacheStore();
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope([['code' => 'CD']]), $this->envelope([['code' => 'KE']]));
+        $session = new CheckoutSession('tok', 'WC-4', '1.00', 'USD', true, time() + 60);
+        $scope = $this->settings()->cacheScope();
+
+        $proxy = new ProxyService($client, new ProxyCache($store, $scope, 1));
+        $first = $proxy->handle('GET', 'countries', [], [], $session);
+        $again = $proxy->handle('GET', 'countries', [], [], $session);
+        self::assertSame($first['body'], $again['body']);
+        self::assertCount(2, $mock->history, 'token + one countries call only');
+
+        $bumped = (new ProxyService($client, new ProxyCache($store, $scope, 2)))->handle('GET', 'countries', [], [], $session);
+        self::assertSame([['code' => 'KE']], $bumped['body']);
+        self::assertCount(3, $mock->history);
+    }
+
+    public function testLookupWithAccountHolderNameIsNeverCached(): void
+    {
+        $store = new InMemoryCacheStore();
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['entity' => 'A']), $this->envelope(['entity' => 'A']));
+        $session = new CheckoutSession('tok', 'WC-5', '1.00', 'USD', true, time() + 60);
+        $proxy = new ProxyService($client, new ProxyCache($store, 'scope', 1));
+        $query = ['account_number' => '243820000000', 'get_lookup' => 'true'];
+        $proxy->handle('GET', 'match-provider', $query, [], $session);
+        $proxy->handle('GET', 'match-provider', $query, [], $session);
+        self::assertCount(3, $mock->history);
+    }
+
+    public function testFeeSimulationAndStatusAreNeverCached(): void
+    {
+        $store = new InMemoryCacheStore();
+        $mock = new MockHttpClient();
+        $client = ClientFactory::fromSettings($this->settings(), $mock);
+        $mock->enqueue($this->tokenResponse(), $this->envelope(['status' => 'PENDING']), $this->envelope(['status' => 'SUCCESS']));
+        $session = new CheckoutSession('tok', 'WC-6', '1.00', 'USD', true, time() + 60);
+        $proxy = new ProxyService($client, new ProxyCache($store, 'scope', 1));
+        $proxy->handle('GET', 'status', [], [], $session);
+        $proxy->handle('GET', 'status', [], [], $session);
+        self::assertCount(3, $mock->history);
+    }
+
+    public function testCheckoutConfigCarriesCartCurrencyAndEmail(): void
+    {
+        $session = new CheckoutSession('tok', 'WC-7', '40.00', 'EUR', true, time() + 60);
+        $config = CheckoutConfig::forSession('https://shop/rest', 'https://shop/status', $session, 'en', 'buyer@example.com');
+        self::assertSame('EUR', $config['currency']);
+        self::assertSame('buyer@example.com', $config['customerEmail']);
+        self::assertSame(
+            ['merchantBackendUrl', 'clientToken', 'pollUrl', 'pollHeaders', 'locale', 'amount', 'lockAmount', 'reference', 'currency', 'customerEmail'],
+            array_keys($config),
+        );
     }
 
     public function testSettingsSanitizerKeepsBlankSecrets(): void

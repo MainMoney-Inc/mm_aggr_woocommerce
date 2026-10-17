@@ -8,6 +8,7 @@ use MainMoney\WooCommercePlugin\ClientFactory;
 use MainMoney\WooCommercePlugin\CheckoutConfig;
 use MainMoney\WooCommercePlugin\OrderSyncPolicy;
 use MainMoney\WooCommercePlugin\PaymentVerifier;
+use MainMoney\WooCommercePlugin\ProxyCache;
 use MainMoney\WooCommercePlugin\ProxyService;
 use MainMoney\WooCommercePlugin\WebhookService;
 
@@ -101,28 +102,20 @@ final class WC_Mm_Aggr_Rest
         $cart->calculate_totals();
         $amount = (string) wc_format_decimal($cart->get_total('edit'), wc_get_price_decimals());
         $currency = get_woocommerce_currency();
-        $store = new WC_Mm_Aggr_Session_Store();
-        $session = null;
-        $existingToken = WC()->session !== null ? WC()->session->get('mm_aggr_token') : null;
-        if (is_string($existingToken) && $existingToken !== '') {
-            $found = $store->find($existingToken);
-            if ($found !== null && $found->amount === $amount && $found->currency === $currency) {
-                $session = $found;
-            }
+        // Every call starts a fresh session: a refreshed page or a retry gets its own reference and
+        // Idempotency-Key. A deposit that failed keeps its reference forever, so it can never be reused.
+        if (WC()->session !== null) {
+            WC()->session->set_customer_session_cookie(true);
         }
-        if ($session === null) {
-            if (WC()->session !== null) {
-                WC()->session->set_customer_session_cookie(true);
-            }
-            $session = CheckoutSession::create(amount: $amount, currency: $currency, lockAmount: true);
-            $store->save($session);
-        }
+        $session = CheckoutSession::create(amount: $amount, currency: $currency, lockAmount: true);
+        (new WC_Mm_Aggr_Session_Store())->save($session);
 
         $response = new \WP_REST_Response(CheckoutConfig::forSession(
             rest_url('wc-mm-aggr/v1'),
             rest_url('wc-mm-aggr/v1/status'),
             $session,
             str_starts_with(get_locale(), 'fr') ? 'fr' : 'en',
+            self::customerEmail(),
         ), 200);
         $response->header('Cache-Control', 'no-store');
 
@@ -144,7 +137,8 @@ final class WC_Mm_Aggr_Rest
             return new \WP_Error('mm_aggr_unconfigured', 'MainMoney is not configured', ['status' => 503]);
         }
         $route = trim(str_replace('/wc-mm-aggr/v1/', '', $request->get_route()), '/');
-        $result = (new ProxyService(ClientFactory::fromSettings($settings)))->handle(
+        $cache = new ProxyCache(new WC_Mm_Aggr_Cache_Store(), $settings->cacheScope(), WC_Mm_Aggr_Cache_Store::version());
+        $result = (new ProxyService(ClientFactory::fromSettings($settings), $cache))->handle(
             $request->get_method(),
             $route,
             $request->get_query_params(),
@@ -226,6 +220,22 @@ final class WC_Mm_Aggr_Rest
         $response->header('Cache-Control', 'no-store');
 
         return $response;
+    }
+
+    /**
+     * Receipt address offered to the customer: the billing email WooCommerce already knows, else the account's.
+     */
+    private static function customerEmail(): string
+    {
+        $email = '';
+        if (function_exists('WC') && WC()->customer !== null) {
+            $email = (string) WC()->customer->get_billing_email();
+        }
+        if ($email === '' && is_user_logged_in()) {
+            $email = (string) wp_get_current_user()->user_email;
+        }
+
+        return is_email($email) ? $email : '';
     }
 
     private static function sessionFromRequest(\WP_REST_Request $request): CheckoutSession|\WP_Error
