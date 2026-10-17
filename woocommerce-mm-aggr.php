@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MainMoney for WooCommerce
  * Description: MainMoney aggregator gateway for WooCommerce.
- * Version: 0.1.6
+ * Version: 0.1.7
  * Requires at least: 6.7
  * Requires PHP: 8.2
  * Requires Plugins: woocommerce
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_MM_AGGR_VERSION', '0.1.6');
+define('WC_MM_AGGR_VERSION', '0.1.7');
 define('WC_MM_AGGR_FILE', __FILE__);
 define('WC_MM_AGGR_DIR', plugin_dir_path(__FILE__));
 define('WC_MM_AGGR_URL', plugin_dir_url(__FILE__));

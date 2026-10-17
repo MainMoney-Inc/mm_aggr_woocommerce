@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 (2026-10-17)
+
+- Added some features
+
 ## 0.1.6 (2026-10-17)
 
 - Added checkout caches and others
