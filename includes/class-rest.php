@@ -146,6 +146,10 @@ final class WC_Mm_Aggr_Rest
             $session,
         );
 
+        if ($result['status'] >= 500) {
+            wc_get_logger()->warning(sprintf('MainMoney proxy %s returned HTTP %d', $route, $result['status']), ['source' => 'mm-aggr']);
+        }
+
         return new \WP_REST_Response($result['body'], $result['status']);
     }
 

@@ -102,10 +102,11 @@ async function mountOne(root: HTMLElement, plugin: PluginConfig): Promise<void> 
       return;
     }
     const status = (state.status?.status ?? "").toUpperCase();
-    // As soon as the deposit exists (PENDING or already SUCCESS) the order is placed on hold; the thank-you
-    // page then waits for the provider. A failed deposit never places an order.
-    const accepted = state.step === "polling" || state.step === "ongoing" || (state.step === "terminal" && status === "SUCCESS");
-    if (!accepted || FAILED.has(status)) {
+    // The order is placed once the deposit exists AND the status endpoint answered (or the deposit already
+    // finished), so a failing poll never races the redirect. The order goes on hold while the deposit is PENDING;
+    // the thank-you page then waits for the provider. A failed deposit or an error screen never places an order.
+    const accepted = state.pollConfirmed || state.step === "ongoing" || (state.step === "terminal" && status === "SUCCESS");
+    if (!accepted || state.step === "error" || FAILED.has(status)) {
       return;
     }
     submitted = true;

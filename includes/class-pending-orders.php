@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use MainMoney\WooCommercePlugin\PaymentVerifier;
+
 /**
  * Handles orders that are on hold while the provider confirms the deposit:
  * the waiting UI on the thank-you page and the background reconciler.
@@ -11,6 +13,7 @@ final class WC_Mm_Aggr_Pending_Orders
     public const CRON_HOOK = 'wc_mm_aggr_reconcile';
     private const MIN_AGE = 120;
     private const MAX_AGE = 172800;
+    public const REFETCH_ACTION = 'mm_aggr_refetch_status';
 
     public static function register(): void
     {
@@ -18,6 +21,51 @@ final class WC_Mm_Aggr_Pending_Orders
         add_filter('cron_schedules', [self::class, 'schedules']);
         add_action(self::CRON_HOOK, [self::class, 'reconcile']);
         add_action('init', [self::class, 'schedule']);
+        add_filter('woocommerce_order_actions', [self::class, 'orderActions'], 10, 2);
+        add_action('woocommerce_order_action_'.self::REFETCH_ACTION, [self::class, 'refetchStatus']);
+    }
+
+    /**
+     * "Refetch status from MainMoney" for orders still waiting on the provider.
+     *
+     * @param array<string, string> $actions
+     *
+     * @return array<string, string>
+     */
+    public static function orderActions(array $actions, mixed $order = null): array
+    {
+        if (!$order instanceof WC_Order) {
+            $order = wc_get_order(isset($GLOBALS['theorder']) && $GLOBALS['theorder'] instanceof WC_Order ? $GLOBALS['theorder']->get_id() : 0);
+        }
+        if ($order instanceof WC_Order
+            && $order->get_payment_method() === 'mm_aggr'
+            && $order->has_status(['on-hold', 'pending'])
+            && $order->get_meta('_mm_aggr_reference') !== '') {
+            $actions[self::REFETCH_ACTION] = __('Refetch status from MainMoney', 'woocommerce-mm-aggr');
+        }
+
+        return $actions;
+    }
+
+    public static function refetchStatus(WC_Order $order): void
+    {
+        $gateway = WC()->payment_gateways()->payment_gateways()['mm_aggr'] ?? null;
+        if (!$gateway instanceof WC_Gateway_Mm_Aggr) {
+            return;
+        }
+        $outcome = WC_Mm_Aggr_Order_Sync::refresh($order, $gateway, 0);
+        $order = wc_get_order($order->get_id()) ?: $order;
+        $labels = [
+            PaymentVerifier::PAID => __('payment confirmed', 'woocommerce-mm-aggr'),
+            PaymentVerifier::PENDING => __('still pending at the provider', 'woocommerce-mm-aggr'),
+            PaymentVerifier::FAILED => __('payment failed', 'woocommerce-mm-aggr'),
+            PaymentVerifier::MISMATCH => __('payment does not match the order, review manually', 'woocommerce-mm-aggr'),
+        ];
+        $order->add_order_note(sprintf(
+            /* translators: %s outcome of the manual status check */
+            __('MainMoney status refetched manually: %s.', 'woocommerce-mm-aggr'),
+            $labels[$outcome] ?? __('MainMoney could not be reached or returned no status', 'woocommerce-mm-aggr'),
+        ));
     }
 
     /**

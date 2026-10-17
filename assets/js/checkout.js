@@ -154,7 +154,8 @@
     failed: "Payment failed",
     confirming: "Confirming payment",
     polling: "Waiting for confirmation",
-    slow: "Your payment request has been sent. We are waiting for the provider to confirm success or failure. Please keep this page open.",
+    slow: "Your payment is still being processed. You can safely leave this page: we will notify you as soon as the status changes.",
+    connectionLost: "Connection lost. We keep checking and will resume automatically once you are back online.",
     limits: "Amount must be between {min} and {max}",
     required: "This field is required",
     balanceRejected: "Balance validation failed",
@@ -211,7 +212,8 @@
     failed: "Paiement \xE9chou\xE9",
     confirming: "Confirmation du paiement",
     polling: "En attente de confirmation",
-    slow: "Votre demande de paiement a \xE9t\xE9 envoy\xE9e. Nous attendons la confirmation (succ\xE8s ou \xE9chec) de l'op\xE9rateur. Veuillez garder cette page ouverte.",
+    slow: "Votre paiement est toujours en cours de traitement. Vous pouvez quitter cette page sans risque : nous vous informerons d\xE8s que le statut change.",
+    connectionLost: "Connexion perdue. Nous continuons de v\xE9rifier et reprendrons automatiquement d\xE8s le retour de la connexion.",
     limits: "Le montant doit \xEAtre compris entre {min} et {max}",
     required: "Ce champ est obligatoire",
     balanceRejected: "Validation du solde \xE9chou\xE9e",
@@ -372,18 +374,36 @@
       throw new ConfigurationException("pollUrl is required when polling is enabled");
     }
     let latest = { status: "PENDING" };
+    let failures = 0;
     while (!options.signal?.aborted) {
       const url = withQuery2(options.pollUrl, { reference: options.reference, operation: options.operation });
-      const response = await options.fetchImpl(url, {
-        method: "GET",
-        headers: { ...options.pollHeaders },
-        signal: options.signal
-      });
-      latest = decodeJson(response.status, await response.text());
-      if (typeof latest.status === "string" && isTerminalStatus(latest.status)) {
+      let delay = options.intervalMs;
+      try {
+        const response = await options.fetchImpl(url, {
+          method: "GET",
+          headers: { ...options.pollHeaders },
+          signal: options.signal
+        });
+        latest = decodeJson(response.status, await response.text());
+        if (failures > 0) {
+          failures = 0;
+          options.onConnectionChange?.(false);
+        }
+        options.onResponse?.(latest);
+      } catch (error) {
+        if (options.signal?.aborted) {
+          throw error;
+        }
+        failures += 1;
+        if (failures === 1) {
+          options.onConnectionChange?.(true);
+        }
+        delay = Math.min(options.intervalMs * 2 ** Math.min(failures, 6), options.maxBackoffMs ?? 1e4);
+      }
+      if (failures === 0 && typeof latest.status === "string" && isTerminalStatus(latest.status)) {
         return latest;
       }
-      await sleep(options.intervalMs, options.signal);
+      await sleep(delay, options.signal);
     }
     return latest;
   }
@@ -483,6 +503,8 @@
       customerEmail: options.customerEmail?.trim() ?? "",
       canPay: false,
       slow: false,
+      connectionLost: false,
+      pollConfirmed: false,
       theme
     };
     let lastMatchedIdentifier = "";
@@ -942,6 +964,8 @@
         }
         state.step = "polling";
         state.slow = false;
+        state.connectionLost = false;
+        state.pollConfirmed = false;
         notify();
         const slowTimer = setTimeout(() => {
           state.slow = true;
@@ -957,12 +981,23 @@
             reference,
             operation: state.operation,
             intervalMs: options.pollIntervalMs ?? 1e3,
-            signal: pollAbort.signal
+            signal: pollAbort.signal,
+            onConnectionChange: (lost) => {
+              state.connectionLost = lost;
+              notify();
+            },
+            onResponse: () => {
+              if (!state.pollConfirmed) {
+                state.pollConfirmed = true;
+                notify();
+              }
+            }
           });
         } finally {
           clearTimeout(slowTimer);
         }
         state.slow = false;
+        state.connectionLost = false;
         state.status = status;
         state.step = "terminal";
         notify();
@@ -1583,6 +1618,13 @@
     const caption = document.createElement("div");
     caption.textContent = state.step === "polling" ? checkout.t("polling") : checkout.t("confirming");
     wrap.append(spinner, caption);
+    if (state.step === "polling" && state.connectionLost) {
+      const lost = document.createElement("div");
+      lost.className = "mm-confirm-slow mm-confirm-offline";
+      lost.setAttribute("role", "status");
+      lost.textContent = checkout.t("connectionLost");
+      wrap.append(lost);
+    }
     if (state.step === "polling" && state.slow) {
       const notice = document.createElement("div");
       notice.className = "mm-confirm-slow";
@@ -1834,8 +1876,8 @@
         return;
       }
       const status = (state.status?.status ?? "").toUpperCase();
-      const accepted = state.step === "polling" || state.step === "ongoing" || state.step === "terminal" && status === "SUCCESS";
-      if (!accepted || FAILED.has(status)) {
+      const accepted = state.pollConfirmed || state.step === "ongoing" || state.step === "terminal" && status === "SUCCESS";
+      if (!accepted || state.step === "error" || FAILED.has(status)) {
         return;
       }
       submitted = true;

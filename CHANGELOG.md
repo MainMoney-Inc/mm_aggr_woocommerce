@@ -12,6 +12,9 @@
 
 ## Unreleased
 
+- fix: a failed status poll (NetworkError, 5xx) no longer ends the checkout or redirects. The widget keeps polling with backoff and shows "connection lost, retrying"; only a failed/cancelled/expired payment shows Retry. The order is placed once the first status poll succeeded
+- feat: the processing message tells the customer they can leave the page and will be notified
+- feat: order action "Refetch status from MainMoney" for on-hold/pending MainMoney orders
 - fix: the checkout no longer changes the cart currency. The order stays in the cart currency; when the provider accepts several currencies the customer picks the currency to pay in, with an automatic conversion quote. Without a quote the widget says conversion is not available and asks to select the cart currency
 - fix: "Idempotency-Key was already used with a different request body". The key now follows the checkout session (a refreshed page or a retry starts a new session with a new reference), and a failed payment shows only the error and a Retry button
 - fix: countries are restricted to those allowed for the merchant (also when a phone number matches a provider)
