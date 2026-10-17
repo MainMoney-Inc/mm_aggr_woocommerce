@@ -210,7 +210,7 @@ final class WC_Mm_Aggr_Rest
         }
         $outcome = PaymentVerifier::UNKNOWN;
         $gateway = self::gateway();
-        if ($gateway !== null && $order->has_status('on-hold')) {
+        if ($gateway !== null && $order->has_status(['pending', 'on-hold'])) {
             $outcome = WC_Mm_Aggr_Order_Sync::refresh($order, $gateway);
             $order = wc_get_order($order->get_id());
         }

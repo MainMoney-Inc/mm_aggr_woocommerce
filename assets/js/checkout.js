@@ -155,6 +155,7 @@
     confirming: "Confirming payment",
     polling: "Waiting for confirmation",
     slow: "Your payment is still being processed. You can safely leave this page: we will notify you as soon as the status changes.",
+    lookingUp: "Checking number",
     connectionLost: "Connection lost. We keep checking and will resume automatically once you are back online.",
     limits: "Amount must be between {min} and {max}",
     required: "This field is required",
@@ -213,6 +214,7 @@
     confirming: "Confirmation du paiement",
     polling: "En attente de confirmation",
     slow: "Votre paiement est toujours en cours de traitement. Vous pouvez quitter cette page sans risque : nous vous informerons d\xE8s que le statut change.",
+    lookingUp: "V\xE9rification du num\xE9ro",
     connectionLost: "Connexion perdue. Nous continuons de v\xE9rifier et reprendrons automatiquement d\xE8s le retour de la connexion.",
     limits: "Le montant doit \xEAtre compris entre {min} et {max}",
     required: "Ce champ est obligatoire",
@@ -1241,6 +1243,8 @@
     input.addEventListener("input", () => checkout.setCustomerEmail(input.value));
     return floatingField(checkout.t("emailLabel"), input, checkout.t("emailHint"));
   }
+  var LOOKUP_DEBOUNCE_MS = 600;
+  var LOOKUP_MIN_DIGITS = 7;
   function phoneField(checkout, state) {
     const row = document.createElement("div");
     row.className = "mm-phone-row";
@@ -1273,14 +1277,33 @@
     input.autocomplete = "tel-national";
     input.placeholder = "812345678";
     input.value = state.identifier;
+    const lookup = document.createElement("span");
+    lookup.className = "mm-spinner-sm";
+    lookup.setAttribute("role", "status");
+    lookup.setAttribute("aria-label", checkout.t("lookingUp"));
+    lookup.hidden = true;
+    const runLookup = () => {
+      lookup.hidden = false;
+      void checkout.matchProvider().catch(() => void 0).finally(() => {
+        lookup.hidden = true;
+      });
+    };
+    let timer;
     input.addEventListener("input", () => {
       checkout.setIdentifier(input.value);
       refreshPayButton(checkout, input);
+      clearTimeout(timer);
+      if (input.value.replace(/\D/g, "").length >= LOOKUP_MIN_DIGITS) {
+        timer = setTimeout(runLookup, LOOKUP_DEBOUNCE_MS);
+      }
     });
     input.addEventListener("blur", () => {
-      void checkout.matchProvider().catch(() => void 0);
+      clearTimeout(timer);
+      if (input.value.trim() !== "") {
+        runLookup();
+      }
     });
-    row.append(flag, dial, divider, input);
+    row.append(flag, dial, divider, input, lookup);
     return floatingField(checkout.t("phone"), row, checkout.t("phoneHint"));
   }
   function amountField(checkout, state) {
@@ -1344,7 +1367,6 @@
     box.className = "mm-fee-box";
     const q = quote(state);
     const currency = state.fees?.quote?.to_currency ?? state.currency;
-    box.append(feeRow(checkout.t("merchantReceives"), formatMoney(q.receives, state, currency)));
     box.append(feeRow(checkout.t("processingFee"), formatMoney(q.fee, state, currency)));
     const total = feeRow(checkout.t("youPay"), formatMoney(q.pay, state, currency));
     total.classList.add("mm-fee-total");
@@ -1508,6 +1530,22 @@
       element.append(formChrome(checkout, state, logoUrl, options.links ?? {}, body));
     };
     const render = (state) => {
+      const fields = Array.from(element.querySelectorAll("input"));
+      const focused = fields.findIndex((field) => field === document.activeElement);
+      const caret = focused >= 0 ? fields[focused].selectionStart : null;
+      renderBody(state);
+      if (focused >= 0) {
+        const next = element.querySelectorAll("input")[focused];
+        next?.focus();
+        if (caret !== null && caret !== void 0) {
+          try {
+            next?.setSelectionRange(caret, caret);
+          } catch {
+          }
+        }
+      }
+    };
+    const renderBody = (state) => {
       applyTheme(element, state.theme);
       element.classList.add("mm-checkout");
       element.innerHTML = "";
@@ -1589,10 +1627,6 @@
       wrap.append(overviewRow(checkout.t("customerName"), state.customerName));
     }
     wrap.append(overviewRow(checkout.t("amount"), `${state.amount} ${state.currency}`));
-    if (state.fees !== void 0) {
-      wrap.append(overviewRow(checkout.t("fees"), `${state.fees.total_merchant_fee} ${state.currency}`));
-      wrap.append(overviewRow(checkout.t("netAmount"), `${state.fees.net_amount} ${state.currency}`));
-    }
     if (state.partnerFee !== null) {
       wrap.append(
         overviewRow(state.partnerFee.label ?? checkout.t("partnerFee"), `${state.partnerFee.amount} ${state.partnerFee.currency}`)

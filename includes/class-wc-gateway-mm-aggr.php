@@ -126,9 +126,9 @@ class WC_Gateway_Mm_Aggr extends WC_Payment_Gateway
             $order->update_meta_data('_mm_aggr_provider', $payload['provider_code']);
         }
         $order->save();
-        // Temporary status: the deposit may still be PENDING at the provider. The webhook, the thank-you page
-        // poll and the reconciler move the order on as soon as the final result is known.
-        $order->update_status('on-hold', __('Awaiting MainMoney payment confirmation.', 'woocommerce-mm-aggr'));
+        // The deposit may still be PENDING at the provider, so the order stays "Pending payment". The webhook, the
+        // thank-you page poll and the reconciler move it on as soon as the final result is known.
+        $order->add_order_note(__('Awaiting MainMoney payment confirmation.', 'woocommerce-mm-aggr'));
         $early = WC_Mm_Aggr_Order_Sync::takeStashed($reference);
         if ($early !== null) {
             WC_Mm_Aggr_Order_Sync::apply($order, $early);

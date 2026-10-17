@@ -16,6 +16,9 @@
 
 ## Unreleased
 
+- fix: a deposit that is still PENDING keeps the order in "Pending payment" (no more On hold); the webhook, thank-you poll, reconciler and "Refetch status" action now handle pending orders
+- feat: the phone number lookup is debounced (600 ms after the last keystroke, from 7 digits) with a small spinner while the number is checked; the input keeps focus when the lookup finishes
+- fix: the customer never sees "Merchant receives", the merchant fee or the net amount
 - fix: a failed status poll (NetworkError, 5xx) no longer ends the checkout or redirects. The widget keeps polling with backoff and shows "connection lost, retrying"; only a failed/cancelled/expired payment shows Retry. The order is placed once the first status poll succeeded
 - feat: the processing message tells the customer they can leave the page and will be notified
 - feat: order action "Refetch status from MainMoney" for on-hold/pending MainMoney orders

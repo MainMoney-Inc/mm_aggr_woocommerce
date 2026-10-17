@@ -93,7 +93,7 @@ final class WC_Mm_Aggr_Pending_Orders
     public static function thankYou(mixed $orderId): void
     {
         $order = wc_get_order(is_numeric($orderId) ? (int) $orderId : 0);
-        if (!$order instanceof WC_Order || !$order->has_status('on-hold')) {
+        if (!$order instanceof WC_Order || !$order->has_status(['pending', 'on-hold'])) {
             return;
         }
         wp_enqueue_script('wc-mm-aggr-order-status', WC_MM_AGGR_URL.'assets/js/order-status.js', [], WC_MM_AGGR_VERSION, true);
@@ -125,7 +125,7 @@ final class WC_Mm_Aggr_Pending_Orders
             return;
         }
         $orders = wc_get_orders([
-            'status' => 'on-hold',
+            'status' => ['pending', 'on-hold'],
             'payment_method' => 'mm_aggr',
             'limit' => 50,
             'orderby' => 'date',
