@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "mainmoney/mm-aggr-php-sdk",
-            "version": "v0.1.1",
+            "version": "v0.1.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk.git",
-                "reference": "526c781b8094aac64ab242ebea128c2706bed37a"
+                "reference": "e530725fdace38a66bc0195bb47add1ffc8a2717"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/MainMoney-Inc/mm_aggr_php_sdk/zipball/526c781b8094aac64ab242ebea128c2706bed37a",
-                "reference": "526c781b8094aac64ab242ebea128c2706bed37a",
+                "url": "https://api.github.com/repos/MainMoney-Inc/mm_aggr_php_sdk/zipball/e530725fdace38a66bc0195bb47add1ffc8a2717",
+                "reference": "e530725fdace38a66bc0195bb47add1ffc8a2717",
                 "shasum": ""
             },
             "require": {
@@ -55,7 +55,7 @@
                 "issues": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk/issues",
                 "source": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk"
             },
-            "time": "2026-10-11T01:11:47+00:00"
+            "time": "2026-10-11T02:58:57+00:00"
         }
     ],
     "packages-dev": [
