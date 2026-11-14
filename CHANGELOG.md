@@ -20,6 +20,11 @@
 
 ## Unreleased
 
+## 0.1.9
+
+- Security: the vendored WordPress install under `examples/woocommerce-store` is no longer tracked; `scripts/bootstrap.sh` downloads it into `wordpress/`.
+- Workflows declare least-privilege `permissions: contents: read` (CodeQL).
+
 - fix: a deposit that is still PENDING keeps the order in "Pending payment" (no more On hold); the webhook, thank-you poll, reconciler and "Refetch status" action now handle pending orders
 - feat: the phone number lookup is debounced (600 ms after the last keystroke, from 7 digits) with a small spinner while the number is checked; the input keeps focus when the lookup finishes
 - fix: the customer never sees "Merchant receives", the merchant fee or the net amount

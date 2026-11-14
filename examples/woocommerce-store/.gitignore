@@ -1,4 +1,16 @@
+# WordPress core is downloaded into wordpress/ by scripts/bootstrap.sh.
 wordpress/
+
+# Never commit a WordPress install here (core, bundled themes/plugins, wp-config.php).
+/wp-admin/
+/wp-content/
+/wp-includes/
+/wp-*.php
+/index.php
+/xmlrpc.php
+/license.txt
+/readme.html
+
 .env
 .env.*
 !.env.example

@@ -43,16 +43,29 @@
     validatePayment: "/deposits/validate",
     payouts: "/payouts"
   };
-  function joinUrl(base, path) {
-    const prefix = base.replace(/\/+$/, "");
-    const suffix = path.startsWith("http://") || path.startsWith("https://") ? path : path.replace(/^\/+/, "/");
-    if (suffix.startsWith("http://") || suffix.startsWith("https://")) {
-      return suffix;
+  function trimSlashes(value, { start = false, end = false } = {}) {
+    let from = 0;
+    let to = value.length;
+    if (start) {
+      while (from < to && value.charCodeAt(from) === 47) from += 1;
     }
-    return `${prefix}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
+    if (end) {
+      while (to > from && value.charCodeAt(to - 1) === 47) to -= 1;
+    }
+    return value.slice(from, to);
+  }
+  function joinUrl(base, path) {
+    const prefix = trimSlashes(base, { end: true });
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      return path;
+    }
+    return `${prefix}/${trimSlashes(path, { start: true })}`;
   }
 
   // ../../sdks/javascript/packages/core/src/types.ts
+  function isColorScheme(value) {
+    return value === "light" || value === "dark" || value === "auto";
+  }
   var DEFAULT_THEME = {
     primary: "#ff3366",
     secondary: "#5f5e5e",
@@ -100,7 +113,9 @@
       timeoutMs: options.timeoutMs ?? 3e4,
       locale: options.locale ?? "en",
       messages: options.messages ?? {},
-      theme: { ...DEFAULT_THEME, ...options.theme }
+      theme: { ...DEFAULT_THEME, ...options.theme },
+      currency: options.currency,
+      lockCurrency: options.lockCurrency
     };
   }
 
@@ -267,6 +282,9 @@
     element.style.setProperty("--mm-color-secondary", theme.secondary);
     element.style.setProperty("--mm-color-accent", theme.accent);
     element.style.setProperty("--mm-color-background", theme.background);
+  }
+  function applyColorScheme(element, scheme) {
+    element.setAttribute("data-mm-theme", scheme);
   }
 
   // ../../sdks/javascript/packages/http/src/fetch-client.ts
@@ -479,9 +497,9 @@
     const theme = { ...session.theme, ...options.theme };
     const emitter = new Emitter();
     const pollAbort = new AbortController();
-    const explicitCurrency = options.currency?.trim().toUpperCase() ?? "";
+    const explicitCurrency = (options.currency ?? session.currency)?.trim().toUpperCase() ?? "";
     const fixedCurrency = explicitCurrency !== "";
-    const lockCurrency = options.lockCurrency === true;
+    const lockCurrency = (options.lockCurrency ?? session.lockCurrency) === true;
     const state = {
       step: "country",
       operation: options.operation,
@@ -507,7 +525,9 @@
       slow: false,
       connectionLost: false,
       pollConfirmed: false,
-      theme
+      theme,
+      colorScheme: "auto",
+      resolvedColorScheme: "light"
     };
     let lastMatchedIdentifier = "";
     let submissions = 0;
@@ -530,7 +550,7 @@
     const getState = () => ({ ...structuredClone(state), canPay: computeCanPay() });
     const hasValidLocalNumber = () => {
       const digits = e164OrIdentifier().replace(/\D/g, "");
-      const dial = state.selectedCountry?.phone_code?.replace(/\D/g, "") ?? "";
+      const dial = dialPrefix() ? state.selectedCountry?.phone_code?.replace(/\D/g, "") ?? "" : "";
       const national = digits.length - dial.length;
       return national >= MIN_LOCAL_NUMBER_DIGITS && national <= MAX_LOCAL_NUMBER_DIGITS;
     };
@@ -672,6 +692,9 @@
           await refreshLimitsAndFees();
         }
         notify();
+        if (state.identifier.trim() !== "") {
+          await matchProvider();
+        }
       } catch (error) {
         fail(error);
       }
@@ -1028,15 +1051,54 @@
       }
       return state.partnerFee?.amount ?? options.fees ?? "";
     };
+    const dialPrefix = () => {
+      if (state.activeMethod !== "mobile_money" || state.selectedCountry?.phone_code === void 0) {
+        return false;
+      }
+      return state.selectedProvider === void 0 || isPhoneIdentifier(state.selectedProvider);
+    };
     const e164OrIdentifier = () => {
       const raw = state.identifier.trim();
-      if (!isPhoneIdentifier(state.selectedProvider) || state.selectedCountry?.phone_code === void 0) {
+      if (!dialPrefix() || state.selectedCountry?.phone_code === void 0) {
         return raw;
       }
       return toE164Digits(raw, state.selectedCountry.phone_code);
     };
+    const darkQuery = typeof globalThis.matchMedia === "function" ? globalThis.matchMedia("(prefers-color-scheme: dark)") : void 0;
+    const resolveColorScheme = () => state.colorScheme === "auto" ? darkQuery?.matches === true ? "dark" : "light" : state.colorScheme;
+    const setColorScheme = (scheme) => {
+      if (!isColorScheme(scheme) || state.colorScheme === scheme) {
+        return;
+      }
+      state.colorScheme = scheme;
+      state.resolvedColorScheme = resolveColorScheme();
+      notify();
+    };
+    const onSystemSchemeChange = () => {
+      const resolved = resolveColorScheme();
+      if (state.colorScheme === "auto" && state.resolvedColorScheme !== resolved) {
+        state.resolvedColorScheme = resolved;
+        notify();
+      }
+    };
+    const releases = [];
+    const colorSource = options.colorScheme;
+    if (colorSource !== void 0 && typeof colorSource === "object") {
+      state.colorScheme = isColorScheme(colorSource.get()) ? colorSource.get() : "auto";
+      releases.push(colorSource.subscribe(setColorScheme));
+    } else if (isColorScheme(colorSource)) {
+      state.colorScheme = colorSource;
+    }
+    state.resolvedColorScheme = resolveColorScheme();
+    if (darkQuery !== void 0) {
+      darkQuery.addEventListener("change", onSystemSchemeChange);
+      releases.push(() => darkQuery.removeEventListener("change", onSystemSchemeChange));
+    }
     const close = () => {
       pollAbort.abort();
+      for (const release of releases.splice(0)) {
+        release();
+      }
     };
     return {
       t,
@@ -1049,6 +1111,7 @@
       setCustomerEmail,
       setMethod,
       setLocale,
+      setColorScheme,
       matchProvider,
       setCurrency,
       retry,
@@ -1502,6 +1565,21 @@
   }
 
   // ../../sdks/javascript/packages/checkout/src/mount.ts
+  function layoutKey(state) {
+    return JSON.stringify({
+      ...state,
+      colorScheme: void 0,
+      resolvedColorScheme: void 0,
+      identifier: void 0,
+      customerEmail: void 0,
+      amount: void 0,
+      canPay: void 0
+    });
+  }
+  function applyPalette(element, state) {
+    applyColorScheme(element, state.colorScheme);
+    element.setAttribute("data-mm-resolved-theme", state.resolvedColorScheme);
+  }
   function mountCheckout(element, checkout, options = {}) {
     const logoUrl = options.logoUrl ?? DEFAULT_LOGO_URL;
     const useForm = (state) => (options.layout ?? (state.operation === "deposit" ? "form" : "wizard")) === "form";
@@ -1529,11 +1607,26 @@
       }
       element.append(formChrome(checkout, state, logoUrl, options.links ?? {}, body));
     };
+    let renderedKey;
+    let renderedScheme = "";
     const render = (state) => {
+      element.setAttribute("data-mm-variant", options.variant ?? "default");
+      const key = layoutKey(state);
+      const scheme = `${state.colorScheme}/${state.resolvedColorScheme}`;
+      if (key === renderedKey) {
+        if (scheme !== renderedScheme) {
+          applyPalette(element, state);
+          renderedScheme = scheme;
+        }
+        return;
+      }
+      renderedKey = key;
+      renderedScheme = scheme;
       const fields = Array.from(element.querySelectorAll("input"));
       const focused = fields.findIndex((field) => field === document.activeElement);
       const caret = focused >= 0 ? fields[focused].selectionStart : null;
       renderBody(state);
+      applyPalette(element, state);
       if (focused >= 0) {
         const next = element.querySelectorAll("input")[focused];
         next?.focus();
