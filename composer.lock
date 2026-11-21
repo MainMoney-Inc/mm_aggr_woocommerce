@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "mainmoney/mm-aggr-php-sdk",
-            "version": "v0.1.1",
+            "version": "v0.1.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk.git",
-                "reference": "526c781b8094aac64ab242ebea128c2706bed37a"
+                "reference": "82b318230776ff4e8907f26c98c88969b0bdadef"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/MainMoney-Inc/mm_aggr_php_sdk/zipball/526c781b8094aac64ab242ebea128c2706bed37a",
-                "reference": "526c781b8094aac64ab242ebea128c2706bed37a",
+                "url": "https://api.github.com/repos/MainMoney-Inc/mm_aggr_php_sdk/zipball/82b318230776ff4e8907f26c98c88969b0bdadef",
+                "reference": "82b318230776ff4e8907f26c98c88969b0bdadef",
                 "shasum": ""
             },
             "require": {
@@ -55,7 +55,7 @@
                 "issues": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk/issues",
                 "source": "https://github.com/MainMoney-Inc/mm_aggr_php_sdk"
             },
-            "time": "2026-10-11T01:11:47+00:00"
+            "time": "2026-11-14T22:11:21+00:00"
         }
     ],
     "packages-dev": [
@@ -296,11 +296,11 @@
         },
         {
             "name": "phpstan/phpstan",
-            "version": "2.3.1",
+            "version": "2.3.6",
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/6155239b488e95d26d1ebd95c6b4bb294d7f09db",
-                "reference": "6155239b488e95d26d1ebd95c6b4bb294d7f09db",
+                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/00cedebb76cc82c1592414fa4f616cefdccda16f",
+                "reference": "00cedebb76cc82c1592414fa4f616cefdccda16f",
                 "shasum": ""
             },
             "require": {
@@ -356,7 +356,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-08T21:09:11+00:00"
+            "time": "2026-11-15T19:58:26+00:00"
         },
         {
             "name": "phpunit/php-code-coverage",
